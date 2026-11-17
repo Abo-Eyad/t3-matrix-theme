@@ -439,7 +439,7 @@
         z-index: 9999;
         font-family: -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
         font-size: 12px;
-        color: #e2ffea;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 12%, #fff);
         user-select: none;
       }
 
@@ -450,26 +450,26 @@
         height: 32px;
         padding: 0 12px;
         border-radius: 999px;
-        background: rgba(5, 12, 7, 0.92);
-        border: 1px solid rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.65);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 12px rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.35);
-        color: #e2ffea;
+        background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.92);
+        border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.65);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7), 0 0 12px rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.35);
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 12%, #fff);
         cursor: pointer;
         backdrop-filter: blur(10px);
         transition: all 160ms ease;
       }
 
       #t3-matrix-pill:hover {
-        border-color: var(--matrix-neon-color, #00FF46);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.85), 0 0 16px rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.6);
+        border-color: var(--matrix-symbol-color, #00FF46);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.85), 0 0 16px rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.6);
       }
 
       #t3-matrix-pill-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: var(--matrix-neon-color, #00FF46);
-        box-shadow: 0 0 8px var(--matrix-neon-color, #00FF46);
+        background: var(--matrix-symbol-color, #00FF46);
+        box-shadow: 0 0 8px var(--matrix-symbol-color, #00FF46);
         transition: all 150ms ease;
       }
 
@@ -493,9 +493,9 @@
         overflow-y: auto;
         padding: 14px;
         border-radius: 14px;
-        background: rgba(6, 12, 8, 0.96);
-        border: 1px solid rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.5);
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 22px rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.24);
+        background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.96);
+        border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.5);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 22px rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.24);
         backdrop-filter: blur(16px);
         display: none;
         flex-direction: column;
@@ -519,7 +519,7 @@
         overflow-wrap: anywhere;
         font-size: 12px;
         font-weight: 500;
-        color: #d4f7de;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 18%, #fff);
         display: flex;
         flex-direction: column;
         gap: 2px;
@@ -527,7 +527,7 @@
 
       .t3-matrix-sub {
         font-size: 10.5px;
-        color: #7ca889;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 45%, #888);
         font-weight: 400;
       }
 
@@ -545,9 +545,9 @@
       }
 
       .t3-matrix-switch[aria-checked="true"] {
-        background: rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.28);
-        border-color: var(--matrix-neon-color, #00FF46);
-        box-shadow: 0 0 10px rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.35);
+        background: rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.28);
+        border-color: var(--matrix-symbol-color, #00FF46);
+        box-shadow: 0 0 10px rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.35);
       }
 
       .t3-matrix-switch::after {
@@ -564,8 +564,8 @@
 
       .t3-matrix-switch[aria-checked="true"]::after {
         transform: translateX(17px);
-        background: var(--matrix-neon-color, #00FF46);
-        box-shadow: 0 0 8px var(--matrix-neon-color, #00FF46);
+        background: var(--matrix-symbol-color, #00FF46);
+        box-shadow: 0 0 8px var(--matrix-symbol-color, #00FF46);
       }
 
       .t3-matrix-color-wrap {
@@ -591,7 +591,7 @@
       .t3-matrix-color-hex {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 11px;
-        color: #d4f7de;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 18%, #fff);
       }
 
       .t3-matrix-slider-wrap {
@@ -607,7 +607,7 @@
         min-width: 0;
         width: 0;
         flex: 1;
-        accent-color: var(--matrix-neon-color, #00FF46);
+        accent-color: var(--matrix-symbol-color, #00FF46);
         cursor: pointer;
         height: 4px;
       }
@@ -620,7 +620,7 @@
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
         text-align: right;
-        color: var(--matrix-neon-color, #00FF46);
+        color: var(--matrix-symbol-color, #00FF46);
       }
 
       .t3-matrix-presets {
@@ -639,14 +639,14 @@
         font-size: 10.5px;
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #c8f0d4;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 25%, #fff);
         cursor: pointer;
         transition: all 130ms ease;
       }
 
       .t3-matrix-preset-btn:hover {
-        border-color: var(--matrix-neon-color, #00FF46);
-        background: rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.12);
+        border-color: var(--matrix-symbol-color, #00FF46);
+        background: rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.12);
       }
 
       .t3-matrix-divider {
@@ -1097,7 +1097,7 @@
     const card = document.createElement("div");
     card.id = "t3-matrix-appearance-card";
     card.style.cssText =
-      "margin-top: 14px; padding: 16px; border-radius: 12px; border: 1px solid rgba(var(--matrix-neon-rgb, 0, 255, 70), 0.45); background: rgba(6, 14, 9, 0.84); display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 65;";
+      "margin-top: 14px; padding: 16px; border-radius: 12px; border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.45); background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.84); display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 65;";
     card.innerHTML = renderControlsInnerHtml();
     bindControlEvents(card);
     appearanceSection.appendChild(card);
