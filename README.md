@@ -73,3 +73,11 @@ Removing Matrix Rain doesn't remove the "Matrix Rain" entry the mod added to T3'
 
 ### 2. Import Static Theme Palette (Optional)
 In T3 Code, go to **Settings → Appearance → Colors & themes** and import [`matrix-rain.theme.json`](matrix-rain.theme.json).
+
+## Credits
+
+The Matrix rain animation is based on [**lively_matrix**](https://github.com/bad1dea/lively_matrix) by [**bad1dea**](https://github.com/bad1dea). The Katakana/numeric glyph set, the drop-trail loop and the rainbow color wave are adapted from its `script.js`. All credit for those parts goes to the original author.
+
+## License
+
+[MIT](LICENSE) for this repo's own code. The parts adapted from lively_matrix stay the work of their original author and are not covered by this license, because that project publishes no license of its own.
