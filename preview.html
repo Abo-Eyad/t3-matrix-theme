@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>T3 Code — Matrix Rain Animated Theme</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --matrix-bg: #000000;
+      --matrix-bg-rgb: 0, 0, 0;
+      --matrix-sym: #00FF46;
+      --matrix-sym-rgb: 0, 255, 70;
+      --matrix-neon: #00FF46;
+      --matrix-neon-rgb: 0, 255, 70;
+      --matrix-ui-alpha: 0.72;
+      --matrix-splitter-w: 2px;
+      --matrix-splitter-glow: 0 0 6px rgba(0, 255, 70, 0.9), 0 0 14px rgba(0, 255, 70, 0.55), 0 0 24px rgba(0, 255, 70, 0.3);
+      --matrix-splitter-glow-active: 0 0 8px rgba(0, 255, 70, 1), 0 0 20px rgba(0, 255, 70, 0.95), 0 0 34px rgba(0, 255, 70, 0.7);
+    }
+
+    .matrix-demo-root {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+      color: var(--foreground, #e2ffea);
+    }
+
+    /* Top Control Bar */
+    .matrix-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--radius, 10px);
+      background: var(--card, #0a120d);
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.38);
+      box-shadow: 0 0 16px rgba(var(--matrix-neon-rgb), 0.1);
+      transition: border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .matrix-toolbar {
+      border-color: var(--border, rgba(255,255,255,0.12));
+      box-shadow: none;
+    }
+
+    .matrix-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .matrix-power-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(var(--matrix-neon-rgb), 0.16);
+      color: var(--foreground, #e2ffea);
+      border: 1px solid var(--matrix-neon);
+      box-shadow: 0 0 12px rgba(var(--matrix-neon-rgb), 0.35);
+      transition: all 150ms ease;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .matrix-power-btn {
+      background: var(--secondary, #1f1f23);
+      border-color: var(--border, #3f3f46);
+      box-shadow: none;
+      color: var(--muted-foreground, #a1a1aa);
+    }
+
+    .matrix-power-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--matrix-neon);
+      box-shadow: 0 0 8px var(--matrix-neon);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .matrix-power-dot {
+      background: var(--muted-foreground, #71717a);
+      box-shadow: none;
+    }
+
+    .matrix-presets {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .matrix-preset-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      padding: 0 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--secondary, #141d17);
+      color: var(--foreground, #d8ffe2);
+      border: 1px solid var(--border, rgba(255,255,255,0.1));
+      cursor: pointer;
+      transition: all 130ms ease;
+    }
+
+    .matrix-preset-chip:hover,
+    .matrix-preset-chip[data-active="true"] {
+      border-color: var(--matrix-neon);
+      box-shadow: 0 0 8px rgba(var(--matrix-neon-rgb), 0.3);
+    }
+
+    .matrix-preset-swatch {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* T3 Simulated Window Frame */
+    .t3-window {
+      position: relative;
+      height: 490px;
+      border-radius: var(--radius, 12px);
+      overflow: hidden;
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.42);
+      background: var(--matrix-bg);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+      transition: border-color 200ms ease, background-color 200ms ease;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-window {
+      background: var(--background, #141417);
+      border-color: var(--border, rgba(255,255,255,0.14));
+    }
+
+    #matrix-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 1;
+      transition: opacity 250ms ease;
+    }
+
+    .matrix-demo-root[data-enabled="false"] #matrix-canvas {
+      opacity: 0;
+    }
+
+    /* T3 Titlebar */
+    .t3-titlebar {
+      position: relative;
+      z-index: 2;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: rgba(var(--matrix-bg-rgb), 0.78);
+      border-bottom: 1px solid rgba(var(--matrix-neon-rgb), 0.28);
+      backdrop-filter: blur(8px);
+      font-size: 11.5px;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-titlebar {
+      background: var(--card, #18181b);
+      border-bottom-color: var(--border, #27272a);
+    }
+
+    .t3-title-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .t3-status-tag {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 10.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(var(--matrix-neon-rgb), 0.14);
+      color: var(--matrix-neon);
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.35);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-status-tag {
+      background: var(--secondary, #27272a);
+      color: var(--muted-foreground, #a1a1aa);
+      border-color: transparent;
+    }
+
+    /* Main Workspace Body with Splitters */
+    .t3-workspace {
+      position: relative;
+      z-index: 2;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar */
+    .t3-sidebar {
+      width: 170px;
+      min-width: 120px;
+      max-width: 260px;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      gap: 6px;
+      background: rgba(var(--matrix-bg-rgb), calc(var(--matrix-ui-alpha) - 0.06));
+      backdrop-filter: blur(5px);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-sidebar {
+      background: var(--card, #18181b);
+      backdrop-filter: none;
+    }
+
+    .t3-sidebar-heading {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-foreground, #7ca889);
+      padding: 2px 6px;
+    }
+
+    .t3-thread-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: var(--foreground, #d8ffe2);
+      background: transparent;
+    }
+
+    .t3-thread-item[data-active="true"] {
+      background: rgba(var(--matrix-neon-rgb), 0.15);
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.35);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-thread-item[data-active="true"] {
+      background: var(--secondary, #27272a);
+      border-color: var(--border, #3f3f46);
+    }
+
+    /* NEON SPLITTERS (Vertical & Horizontal) */
+    .t3-splitter-v {
+      position: relative;
+      width: 10px;
+      margin: 0 -4px;
+      cursor: col-resize;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .t3-splitter-v-line {
+      width: var(--matrix-splitter-w, 2px);
+      height: 100%;
+      background: var(--matrix-neon);
+      box-shadow: var(--matrix-splitter-glow);
+      transition: width 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+    }
+
+    .t3-splitter-v:hover .t3-splitter-v-line,
+    .t3-splitter-v[data-dragging="true"] .t3-splitter-v-line {
+      width: calc(var(--matrix-splitter-w, 2px) + 1.5px);
+      box-shadow: var(--matrix-splitter-glow-active);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-splitter-v-line {
+      width: 1px;
+      background: var(--border, #27272a);
+      box-shadow: none;
+    }
+
+    .t3-splitter-h {
+      position: relative;
+      height: 10px;
+      margin: -4px 0;
+      cursor: row-resize;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .t3-splitter-h-line {
+      height: var(--matrix-splitter-w, 2px);
+      width: 100%;
+      background: var(--matrix-neon);
+      box-shadow: var(--matrix-splitter-glow);
+      transition: height 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+    }
+
+    .t3-splitter-h:hover .t3-splitter-h-line,
+    .t3-splitter-h[data-dragging="true"] .t3-splitter-h-line {
+      height: calc(var(--matrix-splitter-w, 2px) + 1.5px);
+      box-shadow: var(--matrix-splitter-glow-active);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-splitter-h-line {
+      height: 1px;
+      background: var(--border, #27272a);
+      box-shadow: none;
+    }
+
+    /* Center Column (Chat + Terminal Drawer) */
+    .t3-center {
+      flex: 1;
+      min-width: 190px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .t3-chat-pane {
+      flex: 1;
+      min-height: 140px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: rgba(var(--matrix-bg-rgb), var(--matrix-ui-alpha));
+      backdrop-filter: blur(3px);
+      overflow: auto;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-chat-pane {
+      background: var(--background, #121215);
+      backdrop-filter: none;
+    }
+
+    .t3-msg-card {
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(8, 20, 12, 0.72);
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.28);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-msg-card {
+      background: var(--card, #1c1c20);
+      border-color: var(--border, #2e2e34);
+    }
+
+    .t3-code-pill {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 4px 8px;
+      border-radius: 5px;
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.55);
+      color: var(--matrix-neon);
+      border: 1px solid rgba(var(--matrix-neon-rgb), 0.3);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-code-pill {
+      color: var(--foreground, #e4e4e7);
+      border-color: var(--border, #3f3f46);
+    }
+
+    .t3-terminal-pane {
+      height: 115px;
+      min-height: 70px;
+      max-height: 220px;
+      padding: 8px 12px;
+      background: rgba(var(--matrix-bg-rgb), calc(var(--matrix-ui-alpha) + 0.08));
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow: hidden;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-terminal-pane {
+      background: var(--card, #16161a);
+    }
+
+    /* Right Panel: Live Customizer Controls */
+    .t3-customizer {
+      width: 245px;
+      min-width: 200px;
+      max-width: 310px;
+      padding: 10px 12px;
+      background: rgba(var(--matrix-bg-rgb), calc(var(--matrix-ui-alpha) + 0.1));
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      font-size: 11.5px;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .t3-customizer {
+      background: var(--card, #18181b);
+      backdrop-filter: none;
+    }
+
+    .ctrl-group-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--matrix-neon);
+      margin-bottom: 2px;
+    }
+
+    .matrix-demo-root[data-enabled="false"] .ctrl-group-title {
+      color: var(--muted-foreground, #a1a1aa);
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .ctrl-label {
+      color: var(--foreground, #d8ffe2);
+      font-size: 11.5px;
+    }
+
+    .ctrl-color-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 6px 2px 3px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .ctrl-color-box input[type="color"] {
+      width: 20px;
+      height: 20px;
+      border: none;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .ctrl-mono {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 10.5px;
+      color: var(--matrix-neon);
+    }
+
+    .matrix-demo-root[data-enabled="false"] .ctrl-mono {
+      color: var(--muted-foreground, #a1a1aa);
+    }
+
+    .ctrl-slider {
+      width: 100%;
+      accent-color: var(--matrix-neon);
+      cursor: pointer;
+      height: 4px;
+    }
+
+    .ctrl-switch {
+      position: relative;
+      width: 34px;
+      height: 19px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      padding: 0;
+      transition: all 140ms ease;
+    }
+
+    .ctrl-switch[aria-checked="true"] {
+      background: rgba(var(--matrix-neon-rgb), 0.3);
+      border-color: var(--matrix-neon);
+    }
+
+    .ctrl-switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #a1a1aa;
+      transition: transform 140ms ease, background 140ms ease;
+    }
+
+    .ctrl-switch[aria-checked="true"]::after {
+      transform: translateX(15px);
+      background: var(--matrix-neon);
+      box-shadow: 0 0 6px var(--matrix-neon);
+    }
+
+    .ctrl-divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.08);
+      margin: 2px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="matrix-demo-root" id="demo-root" data-enabled="true">
+    <!-- Top Quick Bar: Master On/Off + Presets -->
+    <div class="matrix-toolbar">
+      <div class="matrix-toolbar-left">
+        <button type="button" class="matrix-power-btn" id="btn-power">
+          <span class="matrix-power-dot"></span>
+          <span id="power-label">Matrix Rain: ON</span>
+        </button>
+        <div class="matrix-presets" id="preset-container">
+          <button type="button" class="matrix-preset-chip" data-sym="#00FF46" data-bg="#000000" data-active="true">
+            <span class="matrix-preset-swatch" style="background:#00FF46;box-shadow:0 0 6px #00FF46"></span>Matrix Green
+          </button>
+          <button type="button" class="matrix-preset-chip" data-sym="#7D34FD" data-bg="#04010A">
+            <span class="matrix-preset-swatch" style="background:#7D34FD;box-shadow:0 0 6px #7D34FD"></span>Lively Violet
+          </button>
+          <button type="button" class="matrix-preset-chip" data-sym="#00F0FF" data-bg="#01060A">
+            <span class="matrix-preset-swatch" style="background:#00F0FF;box-shadow:0 0 6px #00F0FF"></span>Cyber Cyan
+          </button>
+          <button type="button" class="matrix-preset-chip" data-sym="#FF1E42" data-bg="#080103">
+            <span class="matrix-preset-swatch" style="background:#FF1E42;box-shadow:0 0 6px #FF1E42"></span>Red Pill
+          </button>
+          <button type="button" class="matrix-preset-chip" data-sym="#FFB000" data-bg="#080500">
+            <span class="matrix-preset-swatch" style="background:#FFB000;box-shadow:0 0 6px #FFB000"></span>Amber CRT
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulated T3 Code Window with Live Matrix Canvas & Neon Splitters -->
+    <div class="t3-window" id="t3-window">
+      <canvas id="matrix-canvas"></canvas>
+
+      <div class="t3-titlebar">
+        <div class="t3-title-badge">
+          <span style="color:var(--matrix-neon);font-family:monospace;font-weight:700">ｱ</span>
+          <span>T3 Code — Matrix Rain Theme Preview</span>
+        </div>
+        <span class="t3-status-tag" id="status-readout">NEON SPLITTERS SYNCED • 50ms</span>
+      </div>
+
+      <div class="t3-workspace" id="t3-workspace">
+        <!-- Sidebar -->
+        <aside class="t3-sidebar" id="pane-sidebar" data-slot="sidebar-inner">
+          <div class="t3-sidebar-heading">Workspace Threads</div>
+          <div class="t3-thread-item" data-active="true">
+            <span style="color:var(--matrix-neon)">●</span>
+            <span>Matrix Rain Theme</span>
+          </div>
+          <div class="t3-thread-item">
+            <span style="opacity:0.45">○</span>
+            <span>Neon Splitters UI</span>
+          </div>
+          <div class="t3-thread-item">
+            <span style="opacity:0.45">○</span>
+            <span>Lively Canvas Port</span>
+          </div>
+          <div style="margin-top:auto;padding:6px;border-radius:6px;background:rgba(0,0,0,0.35);font-size:10.5px;color:var(--muted-foreground,#8ab898)">
+            Drag the glowing neon splitters between panels to test resize glow!
+          </div>
+        </aside>
+
+        <!-- Vertical Neon Splitter 1 (Sidebar Rail) -->
+        <div class="t3-splitter-v" id="splitter-left" role="separator" aria-orientation="vertical" title="Drag to resize sidebar">
+          <div class="t3-splitter-v-line"></div>
+        </div>
+
+        <!-- Center Area (Chat + Horizontal Neon Splitter + Terminal) -->
+        <div class="t3-center" id="pane-center">
+          <div class="t3-chat-pane" data-slot="sidebar-inset">
+            <div class="t3-msg-card">
+              <div style="font-weight:600;margin-bottom:4px;color:var(--matrix-neon)">Matrix Rain Animated Theme (bad1dea/lively_matrix)</div>
+              <div>
+                Katakana &amp; numeric rain renders on a background canvas while T3 Code panels float above with translucent blur and matching neon splitters.
+              </div>
+              <div class="t3-code-pill">゠アイウエオカキクケコ0123456789</div>
+            </div>
+
+            <div class="t3-msg-card" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <span style="font-size:11px;opacity:0.85">Active Neon Splitter Color:</span>
+              <span class="ctrl-mono" id="chat-neon-badge">#00FF46</span>
+            </div>
+          </div>
+
+          <!-- Horizontal Neon Splitter (Terminal Drawer Handle) -->
+          <div class="t3-splitter-h" id="splitter-bottom" role="separator" aria-orientation="horizontal" title="Drag to resize terminal drawer">
+            <div class="t3-splitter-h-line"></div>
+          </div>
+
+          <!-- Terminal Drawer -->
+          <div class="t3-terminal-pane" id="pane-terminal">
+            <div style="display:flex;justify-content:space-between;opacity:0.7;font-size:10px">
+              <span>TERMINAL • powershell</span>
+              <span>matrix-rain-mod.js</span>
+            </div>
+            <div style="color:var(--matrix-neon)">PS C:	3-mods&gt; node install.mjs</div>
+            <div style="opacity:0.85">[+] Installed Matrix Rain theme &amp; neon splitters</div>
+          </div>
+        </div>
+
+        <!-- Vertical Neon Splitter 2 (Right Panel Resize Handle) -->
+        <div class="t3-splitter-v" id="splitter-right" role="separator" aria-orientation="vertical" title="Drag to resize customizer panel">
+          <div class="t3-splitter-v-line"></div>
+        </div>
+
+        <!-- Right Panel: Theme Customizer -->
+        <aside class="t3-customizer" id="pane-customizer">
+          <div class="ctrl-group-title">Colors &amp; Rain</div>
+
+          <div class="ctrl-row">
+            <span class="ctrl-label">Symbol Color</span>
+            <label class="ctrl-color-box">
+              <input type="color" id="inp-sym-color" value="#00FF46" />
+              <span class="ctrl-mono" id="txt-sym-color">#00FF46</span>
+            </label>
+          </div>
+
+          <div class="ctrl-row">
+            <span class="ctrl-label">Background</span>
+            <label class="ctrl-color-box">
+              <input type="color" id="inp-bg-color" value="#000000" />
+              <span class="ctrl-mono" id="txt-bg-color">#000000</span>
+            </label>
+          </div>
+
+          <div>
+            <div class="ctrl-row" style="margin-bottom:3px">
+              <span class="ctrl-label">Animation Delay</span>
+              <span class="ctrl-mono" id="txt-speed">50 ms</span>
+            </div>
+            <input type="range" class="ctrl-slider" id="inp-speed" min="12" max="140" step="2" value="50" />
+          </div>
+
+          <div class="ctrl-row">
+            <span class="ctrl-label">Rainbow Wave</span>
+            <button type="button" class="ctrl-switch" id="sw-rainbow" aria-checked="false" aria-label="Toggle Rainbow Wave"></button>
+          </div>
+
+          <div id="row-rainbow-speed" style="opacity:0.45">
+            <div class="ctrl-row" style="margin-bottom:3px">
+              <span class="ctrl-label">Rainbow Speed</span>
+              <span class="ctrl-mono" id="txt-rainbow-speed">50%</span>
+            </div>
+            <input type="range" class="ctrl-slider" id="inp-rainbow-speed" min="5" max="100" step="5" value="50" />
+          </div>
+
+          <div class="ctrl-divider"></div>
+          <div class="ctrl-group-title">Neon Splitters</div>
+
+          <div class="ctrl-row">
+            <span class="ctrl-label">Match Symbol Color</span>
+            <button type="button" class="ctrl-switch" id="sw-splitter-sync" aria-checked="true" aria-label="Match Symbol Color"></button>
+          </div>
+
+          <div class="ctrl-row" id="row-splitter-color" style="display:none">
+            <span class="ctrl-label">Splitter Neon</span>
+            <label class="ctrl-color-box">
+              <input type="color" id="inp-splitter-color" value="#00FF46" />
+              <span class="ctrl-mono" id="txt-splitter-color">#00FF46</span>
+            </label>
+          </div>
+
+          <div>
+            <div class="ctrl-row" style="margin-bottom:3px">
+              <span class="ctrl-label">Neon Glow</span>
+              <span class="ctrl-mono" id="txt-glow">100%</span>
+            </div>
+            <input type="range" class="ctrl-slider" id="inp-glow" min="0" max="150" step="5" value="100" />
+          </div>
+
+          <div>
+            <div class="ctrl-row" style="margin-bottom:3px">
+              <span class="ctrl-label">Panel Glass Opacity</span>
+              <span class="ctrl-mono" id="txt-opacity">72%</span>
+            </div>
+            <input type="range" class="ctrl-slider" id="inp-opacity" min="25" max="95" step="5" value="72" />
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const KONKANI = "゠アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレワヰヱヲンヺ・ーヽヿ0123456789";
+      const CHARS = KONKANI.split("");
+
+      const config = {
+        enabled: true,
+        matrixColor: "#00FF46",
+        backgroundColor: "#000000",
+        matrixSpeed: 50,
+        rainBow: false,
+        rainbowSpeed: 50,
+        splitterMatchSymbol: true,
+        splitterColor: "#00FF46",
+        splitterGlow: 100,
+        uiOpacity: 0.72,
+        fontSize: 14,
+      };
+
+      const rootEl = document.getElementById("demo-root");
+      const winEl = document.getElementById("t3-window");
+      const canvas = document.getElementById("matrix-canvas");
+      const ctx = canvas.getContext("2d");
+
+      let drops = [];
+      let hue = -0.01;
+      let hueFw = false;
+      let timerId = null;
+
+      function hexToRgb(hex) {
+        const res = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
+        return res
+          ? { r: parseInt(res[1], 16), g: parseInt(res[2], 16), b: parseInt(res[3], 16) }
+          : { r: 0, g: 255, b: 70 };
+      }
+
+      function rgbToHex({ r, g, b }) {
+        const c = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+        return `#${c(r)}${c(g)}${c(b)}`.toUpperCase();
+      }
+
+      function getActiveNeonRgb() {
+        if (!config.splitterMatchSymbol) return hexToRgb(config.splitterColor);
+        if (config.rainBow) {
+          const sp = config.rainbowSpeed / 100;
+          return {
+            r: Math.floor(127 * Math.sin(sp * hue + 0) + 128),
+            g: Math.floor(127 * Math.sin(sp * hue + 2) + 128),
+            b: Math.floor(127 * Math.sin(sp * hue + 4) + 128),
+          };
+        }
+        return hexToRgb(config.matrixColor);
+      }
+
+      function syncThemeStyles() {
+        rootEl.setAttribute("data-enabled", String(config.enabled));
+        const bgRgb = hexToRgb(config.backgroundColor);
+        const symRgb = hexToRgb(config.matrixColor);
+        const neonRgb = getActiveNeonRgb();
+        const neonHex = rgbToHex(neonRgb);
+        const g = config.splitterGlow / 100;
+
+        const docStyle = document.documentElement.style;
+        docStyle.setProperty("--matrix-bg", config.backgroundColor);
+        docStyle.setProperty("--matrix-bg-rgb", `${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}`);
+        docStyle.setProperty("--matrix-sym", config.matrixColor);
+        docStyle.setProperty("--matrix-sym-rgb", `${symRgb.r}, ${symRgb.g}, ${symRgb.b}`);
+        docStyle.setProperty("--matrix-neon", neonHex);
+        docStyle.setProperty("--matrix-neon-rgb", `${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}`);
+        docStyle.setProperty("--matrix-ui-alpha", String(config.uiOpacity));
+        docStyle.setProperty(
+          "--matrix-splitter-glow",
+          g > 0
+            ? `0 0 ${Math.round(6 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, ${0.9 * g}), ` +
+              `0 0 ${Math.round(14 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, ${0.55 * g}), ` +
+              `0 0 ${Math.round(24 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, ${0.3 * g})`
+            : "none"
+        );
+        docStyle.setProperty(
+          "--matrix-splitter-glow-active",
+          g > 0
+            ? `0 0 ${Math.round(8 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 1), ` +
+              `0 0 ${Math.round(20 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 0.95), ` +
+              `0 0 ${Math.round(34 * g)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 0.7)`
+            : "none"
+        );
+
+        document.getElementById("power-label").textContent = config.enabled
+          ? "Matrix Rain: ON"
+          : "Matrix Rain: OFF";
+        document.getElementById("status-readout").textContent = config.enabled
+          ? `${config.rainBow ? "RAINBOW WAVE" : neonHex} • ${config.matrixSpeed}ms`
+          : "THEME PAUSED (STANDARD T3)";
+        document.getElementById("chat-neon-badge").textContent = neonHex;
+      }
+
+      function resizeCanvas() {
+        const rect = winEl.getBoundingClientRect();
+        canvas.width = Math.max(300, Math.floor(rect.width));
+        canvas.height = Math.max(250, Math.floor(rect.height));
+        const cols = Math.ceil(canvas.width / config.fontSize);
+        const next = [];
+        for (let x = 0; x < cols; x++) {
+          next[x] = drops[x] !== undefined ? drops[x] : Math.floor(Math.random() * 25);
+        }
+        drops = next;
+      }
+
+      function draw() {
+        if (!config.enabled) return;
+        const bg = hexToRgb(config.backgroundColor);
+        const wave = hexToRgb(config.matrixColor);
+
+        ctx.fillStyle = `rgba(${bg.r}, ${bg.g}, ${bg.b}, 0.06)`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.font = `${config.fontSize}px monospace, arial`;
+        const cellR = Math.min(255, bg.r + 10);
+        const cellG = Math.min(255, bg.g + 10);
+        const cellB = Math.min(255, bg.b + 10);
+        const rbSpeed = config.rainbowSpeed / 100;
+
+        for (let i = 0; i < drops.length; i++) {
+          const x = i * config.fontSize;
+          const y = drops[i] * config.fontSize;
+
+          ctx.fillStyle = `rgba(${cellR}, ${cellG}, ${cellB}, 0.95)`;
+          ctx.fillRect(x, y - config.fontSize + 2, config.fontSize, config.fontSize);
+
+          const text = CHARS[Math.floor(Math.random() * CHARS.length)];
+
+          if (config.rainBow) {
+            hue += hueFw ? 0.01 : -0.01;
+            const rr = Math.floor(127 * Math.sin(rbSpeed * hue + 0) + 128);
+            const rg = Math.floor(127 * Math.sin(rbSpeed * hue + 2) + 128);
+            const rb = Math.floor(127 * Math.sin(rbSpeed * hue + 4) + 128);
+            ctx.fillStyle = `rgb(${rr}, ${rg}, ${rb})`;
+          } else {
+            ctx.fillStyle = `rgb(${wave.r}, ${wave.g}, ${wave.b})`;
+          }
+
+          ctx.fillText(text, x, y);
+          drops[i]++;
+
+          if (drops[i] * config.fontSize > canvas.height && Math.random() > 0.975) {
+            drops[i] = 0;
+          }
+        }
+
+        if (config.rainBow && config.splitterMatchSymbol) {
+          syncThemeStyles();
+        }
+      }
+
+      function restartTimer() {
+        if (timerId !== null) clearInterval(timerId);
+        timerId = setInterval(draw, config.matrixSpeed);
+      }
+
+      // Pre-warm 35 frames so the preview immediately displays rich falling Matrix rain trails
+      resizeCanvas();
+      const bgInit = hexToRgb(config.backgroundColor);
+      ctx.fillStyle = `rgb(${bgInit.r}, ${bgInit.g}, ${bgInit.b})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      for (let f = 0; f < 35; f++) draw();
+      syncThemeStyles();
+      restartTimer();
+
+      window.addEventListener("resize", resizeCanvas);
+
+      // Interactive Controls Binding
+      document.getElementById("btn-power").addEventListener("click", () => {
+        config.enabled = !config.enabled;
+        syncThemeStyles();
+      });
+
+      document.getElementById("preset-container").addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-sym]");
+        if (!btn) return;
+        document.querySelectorAll(".matrix-preset-chip").forEach((el) => el.removeAttribute("data-active"));
+        btn.setAttribute("data-active", "true");
+        config.enabled = true;
+        config.rainBow = false;
+        config.matrixColor = btn.getAttribute("data-sym");
+        config.backgroundColor = btn.getAttribute("data-bg");
+        document.getElementById("inp-sym-color").value = config.matrixColor;
+        document.getElementById("txt-sym-color").textContent = config.matrixColor;
+        document.getElementById("inp-bg-color").value = config.backgroundColor;
+        document.getElementById("txt-bg-color").textContent = config.backgroundColor;
+        document.getElementById("sw-rainbow").setAttribute("aria-checked", "false");
+        document.getElementById("row-rainbow-speed").style.opacity = "0.45";
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-sym-color").addEventListener("input", (e) => {
+        config.matrixColor = e.target.value.toUpperCase();
+        document.getElementById("txt-sym-color").textContent = config.matrixColor;
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-bg-color").addEventListener("input", (e) => {
+        config.backgroundColor = e.target.value.toUpperCase();
+        document.getElementById("txt-bg-color").textContent = config.backgroundColor;
+        const rgb = hexToRgb(config.backgroundColor);
+        ctx.fillStyle = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-speed").addEventListener("input", (e) => {
+        config.matrixSpeed = Number(e.target.value);
+        document.getElementById("txt-speed").textContent = `${config.matrixSpeed} ms`;
+        syncThemeStyles();
+        restartTimer();
+      });
+
+      document.getElementById("sw-rainbow").addEventListener("click", (e) => {
+        config.rainBow = !config.rainBow;
+        e.currentTarget.setAttribute("aria-checked", String(config.rainBow));
+        document.getElementById("row-rainbow-speed").style.opacity = config.rainBow ? "1" : "0.45";
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-rainbow-speed").addEventListener("input", (e) => {
+        config.rainbowSpeed = Number(e.target.value);
+        document.getElementById("txt-rainbow-speed").textContent = `${config.rainbowSpeed}%`;
+      });
+
+      document.getElementById("sw-splitter-sync").addEventListener("click", (e) => {
+        config.splitterMatchSymbol = !config.splitterMatchSymbol;
+        e.currentTarget.setAttribute("aria-checked", String(config.splitterMatchSymbol));
+        document.getElementById("row-splitter-color").style.display = config.splitterMatchSymbol ? "none" : "flex";
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-splitter-color").addEventListener("input", (e) => {
+        config.splitterColor = e.target.value.toUpperCase();
+        document.getElementById("txt-splitter-color").textContent = config.splitterColor;
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-glow").addEventListener("input", (e) => {
+        config.splitterGlow = Number(e.target.value);
+        document.getElementById("txt-glow").textContent = `${config.splitterGlow}%`;
+        syncThemeStyles();
+      });
+
+      document.getElementById("inp-opacity").addEventListener("input", (e) => {
+        config.uiOpacity = Number(e.target.value) / 100;
+        document.getElementById("txt-opacity").textContent = `${e.target.value}%`;
+        syncThemeStyles();
+      });
+
+      // Draggable Neon Splitters inside the Preview
+      function makeSplitterDraggable(splitterEl, onDrag) {
+        splitterEl.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          splitterEl.setAttribute("data-dragging", "true");
+          splitterEl.setPointerCapture(e.pointerId);
+          const move = (ev) => onDrag(ev);
+          const up = () => {
+            splitterEl.removeAttribute("data-dragging");
+            splitterEl.removeEventListener("pointermove", move);
+            splitterEl.removeEventListener("pointerup", up);
+          };
+          splitterEl.addEventListener("pointermove", move);
+          splitterEl.addEventListener("pointerup", up);
+        });
+      }
+
+      const sidebarPane = document.getElementById("pane-sidebar");
+      const customizerPane = document.getElementById("pane-customizer");
+      const terminalPane = document.getElementById("pane-terminal");
+      const workspaceEl = document.getElementById("t3-workspace");
+      const centerEl = document.getElementById("pane-center");
+
+      makeSplitterDraggable(document.getElementById("splitter-left"), (e) => {
+        const rect = workspaceEl.getBoundingClientRect();
+        const w = Math.max(120, Math.min(250, e.clientX - rect.left));
+        sidebarPane.style.width = `${w}px`;
+      });
+
+      makeSplitterDraggable(document.getElementById("splitter-right"), (e) => {
+        const rect = workspaceEl.getBoundingClientRect();
+        const w = Math.max(200, Math.min(300, rect.right - e.clientX));
+        customizerPane.style.width = `${w}px`;
+      });
+
+      makeSplitterDraggable(document.getElementById("splitter-bottom"), (e) => {
+        const rect = centerEl.getBoundingClientRect();
+        const h = Math.max(70, Math.min(210, rect.bottom - e.clientY));
+        terminalPane.style.height = `${h}px`;
+      });
+    })();
+  </script>
+</body>
+</html>
