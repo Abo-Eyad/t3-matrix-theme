@@ -1,6 +1,8 @@
 /**
  * T3 Code — Matrix Rain Animated Theme Mod
- * Inspired by https://github.com/bad1dea/lively_matrix
+ * Rain glyphs, drop-trail loop and rainbow wave adapted from lively_matrix by bad1dea:
+ * https://github.com/bad1dea/lively_matrix (original author's work; see LICENSE).
+ * Everything else: MIT, see LICENSE.
  *
  * Features:
  * - Fullscreen HTML5 Canvas Matrix Katakana + numeric digital rain in T3 Code
