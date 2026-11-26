@@ -4,6 +4,7 @@
  *
  * Usage:
  *   node install.mjs           # Install / update Matrix Rain Mod in T3 Code
+ *   node install.mjs --status  # Check whether T3 Code files are patched & up to date
  *   node install.mjs --remove  # Uninstall and restore original T3 Code files
  */
 import fs from "node:fs";
@@ -21,11 +22,40 @@ const INLINE_MARKER_START = "<!-- T3-MATRIX-RAIN-MOD-START -->";
 const INLINE_MARKER_END = "<!-- T3-MATRIX-RAIN-MOD-END -->";
 const JS_MARKER_START = "/* === T3-MATRIX-RAIN-MOD-JS-START === */";
 const JS_MARKER_END = "/* === T3-MATRIX-RAIN-MOD-JS-END === */";
+const HASH_MARKER_PREFIX = "/* T3-MATRIX-HASH:";
 
-const argValue = (flag) => { const i = process.argv.indexOf(flag); return i === -1 ? undefined : process.argv[i + 1]; };
+const argValue = (flag) => {
+  const i = process.argv.indexOf(flag);
+  return i === -1 ? undefined : process.argv[i + 1];
+};
+const checkStatus = process.argv.includes("--status");
 const removeAll = process.argv.includes("--remove") || process.argv.includes("--uninstall");
 const removeMod = argValue("--remove-mod");
 const onlyMods = argValue("--mods");
+
+function computeShortHash(text) {
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex").slice(0, 12);
+}
+
+function stampModCode(rawModCode) {
+  if (!rawModCode) return "";
+  const hash = computeShortHash(rawModCode);
+  return `${HASH_MARKER_PREFIX}${hash} */\n${rawModCode}`;
+}
+
+function extractInstalledHash(text) {
+  const match = text.match(/\/\* T3-MATRIX-HASH:([a-f0-9]{12}) \*\//);
+  return match ? match[1] : null;
+}
+
+function inspectContentStatus(text, expectedHash, hasMarker) {
+  if (!hasMarker) return "unpatched";
+  const installedHash = extractInstalledHash(text);
+  if (!installedHash) return "outdated (legacy patch)";
+  return installedHash === expectedHash
+    ? `up-to-date (${installedHash})`
+    : `outdated (${installedHash} != ${expectedHash})`;
+}
 
 function computeAsarIntegrity(buffer) {
   const blockSize = 4194304; // 4 MB standard Electron ASAR integrity block size
@@ -55,8 +85,7 @@ function patchHtmlContent(html, modCode, remove = false) {
   const endIdx = html.indexOf(INLINE_MARKER_END);
   let cleaned = html;
   if (startIdx !== -1 && endIdx !== -1) {
-    cleaned =
-      html.slice(0, startIdx) + html.slice(endIdx + INLINE_MARKER_END.length);
+    cleaned = html.slice(0, startIdx) + html.slice(endIdx + INLINE_MARKER_END.length);
   }
   cleaned = cleaned.replace(SCRIPT_TAG, "");
 
@@ -74,8 +103,7 @@ function patchJsContent(jsSource, modCode, remove = false) {
   const endIdx = jsSource.indexOf(JS_MARKER_END);
   let cleaned = jsSource;
   if (startIdx !== -1 && endIdx !== -1) {
-    cleaned =
-      jsSource.slice(0, startIdx) + jsSource.slice(endIdx + JS_MARKER_END.length);
+    cleaned = jsSource.slice(0, startIdx) + jsSource.slice(endIdx + JS_MARKER_END.length);
   }
   if (remove) return cleaned.trimEnd() + "\n";
 
@@ -96,9 +124,7 @@ function patchPreloadContent(preloadSource, modCode, remove = false) {
   const endIdx = preloadSource.indexOf(JS_MARKER_END);
   let cleaned = preloadSource;
   if (startIdx !== -1 && endIdx !== -1) {
-    cleaned =
-      preloadSource.slice(0, startIdx) +
-      preloadSource.slice(endIdx + JS_MARKER_END.length);
+    cleaned = preloadSource.slice(0, startIdx) + preloadSource.slice(endIdx + JS_MARKER_END.length);
   }
   if (remove) return cleaned.trimEnd() + "\n";
 
@@ -132,12 +158,22 @@ ${JS_MARKER_END}
   return `${cleaned}\n${preloadWrapper}`;
 }
 
-function buildUpdatedAsarBuffer(buf, mutator) {
+function openAsarReader(buf) {
   const headerPickleSize = buf.readUInt32LE(4);
   const jsonLen = buf.readUInt32LE(12);
   const headerJsonStr = buf.subarray(16, 16 + jsonLen).toString("utf8");
   const header = JSON.parse(headerJsonStr);
   const dataOffset = 8 + headerPickleSize;
+  const readFileEntry = (entryObj) => {
+    const off = Number(entryObj.offset);
+    const sz = Number(entryObj.size);
+    return buf.subarray(dataOffset + off, dataOffset + off + sz);
+  };
+  return { header, dataOffset, readFileEntry };
+}
+
+function buildUpdatedAsarBuffer(buf, mutator) {
+  const { header, dataOffset, readFileEntry } = openAsarReader(buf);
 
   const extraBuffers = [];
   let runningOffset = buf.length - dataOffset;
@@ -148,12 +184,6 @@ function buildUpdatedAsarBuffer(buf, mutator) {
     entryObj.integrity = computeAsarIntegrity(newBytes);
     extraBuffers.push(newBytes);
     runningOffset += newBytes.length;
-  };
-
-  const readFileEntry = (entryObj) => {
-    const off = Number(entryObj.offset);
-    const sz = Number(entryObj.size);
-    return buf.subarray(dataOffset + off, dataOffset + off + sz);
   };
 
   mutator({ header, readFileEntry, appendFileEntry });
@@ -172,6 +202,65 @@ function buildUpdatedAsarBuffer(buf, mutator) {
 
   const originalDataSlice = buf.subarray(dataOffset);
   return Buffer.concat([newHeaderBuf, originalDataSlice, ...extraBuffers]);
+}
+
+function inspectServerAsar(asarPath, expectedHash) {
+  if (!fs.existsSync(asarPath)) {
+    return { status: "missing", detail: asarPath };
+  }
+  const buf = fs.readFileSync(asarPath);
+  const { header, readFileEntry } = openAsarReader(buf);
+  const clientNode = header?.files?.apps?.files?.server?.files?.dist?.files?.client?.files;
+  if (!clientNode) return { status: "unpatched", detail: "client assets not found in ASAR" };
+
+  const checks = [];
+  const indexEntry = clientNode["index.html"];
+  if (indexEntry && !indexEntry.unpacked) {
+    const html = readFileEntry(indexEntry).toString("utf8");
+    checks.push({
+      file: "index.html",
+      state: inspectContentStatus(html, expectedHash, html.includes(INLINE_MARKER_START)),
+    });
+  }
+  const assetsNode = clientNode.assets?.files;
+  if (assetsNode) {
+    for (const [fileName, entry] of Object.entries(assetsNode)) {
+      if (/^index-[A-Za-z0-9_-]+\.js$/.test(fileName) && !entry.unpacked) {
+        const js = readFileEntry(entry).toString("utf8");
+        checks.push({
+          file: `assets/${fileName}`,
+          state: inspectContentStatus(js, expectedHash, js.includes(JS_MARKER_START)),
+        });
+      }
+    }
+  }
+  const allUpToDate = checks.length > 0 && checks.every((c) => c.state.startsWith("up-to-date"));
+  const anyPatched = checks.some((c) => !c.state.startsWith("unpatched"));
+  const status = allUpToDate ? "up-to-date" : anyPatched ? "outdated" : "unpatched";
+  return {
+    status,
+    detail: checks.map((c) => `${c.file}: ${c.state}`).join(", ") || "no client targets",
+  };
+}
+
+function inspectAppAsar(asarPath, expectedHash) {
+  if (!fs.existsSync(asarPath)) {
+    return { status: "missing", detail: asarPath };
+  }
+  const buf = fs.readFileSync(asarPath);
+  const { header, readFileEntry } = openAsarReader(buf);
+  const preloadEntry = header?.files?.apps?.files?.desktop?.files?.["dist-electron"]?.files?.["preload.cjs"];
+  if (!preloadEntry || preloadEntry.unpacked) {
+    return { status: "unpatched", detail: "preload.cjs not found in ASAR" };
+  }
+  const preload = readFileEntry(preloadEntry).toString("utf8");
+  const state = inspectContentStatus(preload, expectedHash, preload.includes(JS_MARKER_START));
+  const status = state.startsWith("up-to-date")
+    ? "up-to-date"
+    : state.startsWith("unpatched")
+      ? "unpatched"
+      : "outdated";
+  return { status, detail: `preload.cjs: ${state}` };
 }
 
 function patchServerAsar(asarPath, modCode, remove = false) {
@@ -279,10 +368,85 @@ function readState(stateFile) {
   }
 }
 
+function runStatusCheck({ t3Dir, stateFile, resourcesDir, expectedHash, mods }) {
+  console.log(`=== T3 Matrix Rain Status (repo hash: ${expectedHash}) ===`);
+  let needsAction = false;
+
+  const savedMods = readState(stateFile);
+  console.log(`[i] Recorded mods (${stateFile}): ${savedMods ? savedMods.join(", ") : "none / unreadable"}`);
+
+  const destTheme = path.join(t3Dir, "userdata", "themes", "matrix-rain.theme.json");
+  try {
+    if (fs.existsSync(destTheme)) {
+      const same = fs.readFileSync(destTheme, "utf8") === fs.readFileSync(THEME_JSON_PATH, "utf8");
+      console.log(`[${same ? "+" : "!"}] Theme JSON: ${same ? "up-to-date" : "outdated"} (${destTheme})`);
+      if (!same && mods.includes("matrix")) needsAction = true;
+    } else {
+      console.log(`[-] Theme JSON: missing (${destTheme})`);
+      if (mods.includes("matrix")) needsAction = true;
+    }
+  } catch (err) {
+    console.log(`[?] Theme JSON: inaccessible (${err.code || err.message})`);
+  }
+
+  const runtimeVersionsDir = path.join(t3Dir, "runtime", "versions");
+  try {
+    if (fs.existsSync(runtimeVersionsDir)) {
+      for (const ver of fs.readdirSync(runtimeVersionsDir)) {
+        const clientDir = path.join(runtimeVersionsDir, ver, "client");
+        const clientIndex = path.join(clientDir, "index.html");
+        if (fs.existsSync(clientIndex)) {
+          const html = fs.readFileSync(clientIndex, "utf8");
+          const st = inspectContentStatus(html, expectedHash, html.includes(INLINE_MARKER_START));
+          console.log(`[${st.startsWith("up-to-date") ? "+" : "!"}] Runtime ${ver} index.html: ${st}`);
+          if (!st.startsWith("up-to-date")) needsAction = true;
+        }
+        const assetsDir = path.join(clientDir, "assets");
+        if (fs.existsSync(assetsDir)) {
+          for (const f of fs.readdirSync(assetsDir)) {
+            if (/^index-[A-Za-z0-9_-]+\.js$/.test(f)) {
+              const js = fs.readFileSync(path.join(assetsDir, f), "utf8");
+              const st = inspectContentStatus(js, expectedHash, js.includes(JS_MARKER_START));
+              console.log(`[${st.startsWith("up-to-date") ? "+" : "!"}] Runtime ${ver} assets/${f}: ${st}`);
+              if (!st.startsWith("up-to-date")) needsAction = true;
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.log(`[?] Runtime versions: inaccessible (${err.code || err.message})`);
+  }
+
+  for (const [label, fn, file] of [
+    ["Desktop server.asar", inspectServerAsar, path.join(resourcesDir, "server.asar")],
+    ["Desktop app.asar", inspectAppAsar, path.join(resourcesDir, "app.asar")],
+  ]) {
+    try {
+      const res = fn(file, expectedHash);
+      const badge = res.status === "up-to-date" ? "+" : res.status === "missing" ? "-" : "!";
+      console.log(`[${badge}] ${label}: ${res.status} (${res.detail})`);
+      if (res.status === "outdated" || res.status === "unpatched") needsAction = true;
+    } catch (err) {
+      console.log(`[?] ${label}: error (${err.message})`);
+      needsAction = true;
+    }
+  }
+
+  if (needsAction) {
+    console.log("\nAction needed: quit T3 Code and run `node install.mjs` (or `.\\install.ps1 -Restart`).");
+    process.exitCode = 2;
+  } else {
+    console.log("\nAll detected T3 Code targets are up-to-date.");
+  }
+}
+
 function main() {
   const home = os.homedir();
   const t3Dir = path.join(home, ".t3");
   const stateFile = path.join(t3Dir, "userdata", "t3-mods.json");
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+  const resourcesDir = path.join(localAppData, "Programs", "t3code", "resources");
 
   for (const name of [removeMod, ...(onlyMods ?? "").split(",")].filter(Boolean)) {
     if (!(name in MODS)) {
@@ -294,9 +458,16 @@ function main() {
   if (removeMod) mods = mods.filter((m) => m !== removeMod);
   if (removeAll) mods = [];
   const isUninstall = mods.length === 0; // nothing left: restore T3's original files
-  const modCode = mods.map((m) => fs.readFileSync(path.join(__dirname, MODS[m]), "utf8")).join("\n;\n");
+  const rawModCode = mods.map((m) => fs.readFileSync(path.join(__dirname, MODS[m]), "utf8")).join("\n;\n");
+  const expectedHash = computeShortHash(rawModCode);
+  const modCode = stampModCode(rawModCode);
 
-  console.log(isUninstall ? "=== Removing all T3 mods ===" : `=== Installing T3 mods: ${mods.join(", ")} ===`);
+  if (checkStatus) {
+    runStatusCheck({ t3Dir, stateFile, resourcesDir, expectedHash, mods });
+    return;
+  }
+
+  console.log(isUninstall ? "=== Removing all T3 mods ===" : `=== Installing T3 mods: ${mods.join(", ")} (${expectedHash}) ===`);
 
   // 1. Matrix Rain theme JSON in ~/.t3/userdata/themes
   const themesDir = path.join(t3Dir, "userdata", "themes");
@@ -338,8 +509,6 @@ function main() {
   }
 
   // 3. Patch Local AppData Programs/t3code/resources/server.asar AND app.asar (rebuilt from the clean .bak each time)
-  const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-  const resourcesDir = path.join(localAppData, "Programs", "t3code", "resources");
   let ok = true;
 
   try {
@@ -359,7 +528,7 @@ function main() {
   }
 
   if (!ok) {
-    console.warn("\n[!] T3 Code is probably still running. Quit it completely and run this again.");
+    console.warn("\n[!] T3 Code is probably still running. Quit it completely and run this again (or use .\\install.ps1 -Restart).");
     process.exitCode = 1;
     return;
   }

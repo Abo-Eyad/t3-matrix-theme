@@ -5,13 +5,14 @@
  * Everything else: MIT, see LICENSE.
  *
  * Features:
- * - Fullscreen HTML5 Canvas Matrix Katakana + numeric digital rain in T3 Code
- * - Dual Render Mode: "Screen Glow + Glass UI" (guaranteed visible across all panels/themes) or "Behind Glass UI"
- * - Live customizable Background Color & Symbol (Font) Color
- * - Rainbow Wave Mode & Rainbow Speed (from bad1dea/lively_matrix)
- * - Adjustable Animation Speed (interval ms), Font Size, Rain Intensity, Trail Fade & Surface Glass Opacity
- * - Matching Neon Color & Glow for all T3 Code Splitters (Sidebar rail, Right panel splitter, Terminal splitter)
- * - Master On/Off Toggle (UI pill, Settings -> Appearance integration, and Ctrl+Shift+M shortcut)
+ * - Fullscreen HiDPI HTML5 Canvas Matrix digital rain in T3 Code (auto-pauses when hidden)
+ * - Multiple glyph sets (Katakana, Binary, Hex, Cyberpunk, ASCII) & optional Depth Parallax
+ * - Glassy readability window behind the centered chat column, matched to active theme colors
+ * - Dual Render Mode: "Screen Glow + Glass UI" or "Behind Glass UI"
+ * - Live customizable Background Color, Symbol Color, Rainbow Wave & Presets
+ * - Adjustable Animation Speed, Font Size, Rain Intensity, Trail Fade, Phosphor Lead Glow & Surface Opacity
+ * - Matching Neon Color, Width & Glow for all T3 Code Splitters (Sidebar rail, Vertical & Horizontal handles)
+ * - Master On/Off Toggle (hideable UI pill, Settings -> Appearance integration, and Ctrl+Shift+M shortcut)
  * - Full support for livelyPropertyListener(name, val) and window.T3MatrixRain API
  */
 (() => {
@@ -23,10 +24,31 @@
   const STORAGE_KEY = "t3code:matrix-rain-settings:v1";
   const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
 
-  // Characters from https://github.com/bad1dea/lively_matrix/blob/master/script.js
-  const KONKANI_CHARS =
-    "゠アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレワヰヱヲンヺ・ーヽヿ0123456789";
-  const CHARACTERS = KONKANI_CHARS.split("");
+  // Classic Katakana + numeric set from https://github.com/bad1dea/lively_matrix/blob/master/script.js
+  const GLYPH_SETS = {
+    katakana: {
+      label: "Katakana",
+      chars:
+        "゠アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレワヰヱヲンヺ・ーヽヿ0123456789",
+    },
+    binary: {
+      label: "Binary 01",
+      chars: "01",
+    },
+    hex: {
+      label: "Hex 0-F",
+      chars: "0123456789ABCDEF",
+    },
+    cyber: {
+      label: "Cyberpunk",
+      chars:
+        "アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ABCDEF$+-*/=<>[]{}#%&@¥§ΔΩλ",
+    },
+    ascii: {
+      label: "ASCII",
+      chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*+-=/:;<>[]{}",
+    },
+  };
 
   const DEFAULT_SETTINGS = {
     enabled: true,
@@ -34,18 +56,24 @@
     matrixColor: "#00FF46", // Default from LivelyProperties.json (#00FF46)
     rainBow: false, // Default from LivelyProperties.json
     rainbowSpeed: 50, // 0..100 slider (mapped to /100 = 0.5 in script.js)
-    matrixSpeed: 50, // Default from script.js (50ms interval)
+    matrixSpeed: 42, // Drop tick interval in ms (lower = faster)
+    glyphSet: "katakana", // katakana | binary | hex | cyber | ascii
+    depthMode: true, // Per-column speed & brightness variation for parallax depth
     fontSize: 14, // Default from script.js (14px)
-    trailOpacity: 0.06, // Translucent BG alpha to show rain trail
+    trailOpacity: 0.06, // Translucent BG alpha to show rain trail (0.02..0.18)
     headHighlight: true, // Subtle bright phosphor lead glyph on each drop
-    uiOpacity: 0.75, // Translucent T3 Code panels so Matrix rain is visible behind UI
+    uiOpacity: 0.72, // Translucent T3 Code panels so Matrix rain is visible behind UI
     rainOpacity: 0.85, // Overall canvas opacity (0.15..1.0)
-    overlayBlend: true, // Screen-blend overlay so rain is guaranteed visible even over opaque inner containers
+    overlayBlend: true, // Screen-blend overlay so rain is visible over inner containers
+    chatGlass: true, // Glassy readability window behind the centered chat timeline
+    chatGlassOpacity: 0.38, // Backdrop tint opacity for the chat glass window (0.10..0.85)
+    chatGlassBlur: 6, // Frosted glass blur radius in px (0..20)
     splitterMatchSymbol: true, // Automatically match splitter neon color to symbol/rainbow color
     splitterColor: "#00FF46", // Custom splitter neon color when splitterMatchSymbol is false
     splitterGlowIntensity: 100, // 0..150% neon bloom intensity
     splitterThickness: 2, // 1..4px visible neon core thickness
-    readabilityVersion: 1,
+    showPill: true, // Show floating bottom-right controller pill
+    readabilityVersion: 2,
     panelOpen: false, // Floating customizer popover state
   };
 
@@ -83,16 +111,36 @@
     return `#${clamp(r)}${clamp(g)}${clamp(b)}`.toUpperCase();
   }
 
+  function getActiveCharacters(glyphSetKey) {
+    const entry = GLYPH_SETS[glyphSetKey] || GLYPH_SETS.katakana;
+    return entry.chars.split("");
+  }
+
   function loadSettings() {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = JSON.parse(raw);
       const settings = { ...DEFAULT_SETTINGS, ...(typeof parsed === "object" && parsed ? parsed : {}) };
-      // Upgrade existing low-opacity preferences once; later slider choices still persist.
-      if (!parsed.readabilityVersion) {
-        settings.uiOpacity = Math.max(0.75, Number(settings.uiOpacity) || 0.75);
-        settings.readabilityVersion = 1;
+      if (!GLYPH_SETS[settings.glyphSet]) {
+        settings.glyphSet = DEFAULT_SETTINGS.glyphSet;
+      }
+      // Upgrade existing preferences once; later slider choices still persist.
+      const prevVer = Number(parsed.readabilityVersion) || 0;
+      if (prevVer < 2) {
+        if (prevVer < 1) {
+          settings.uiOpacity = Math.max(0.72, Number(settings.uiOpacity) || 0.72);
+        }
+        if (parsed.chatGlassOpacity === undefined || parsed.chatGlassOpacity === 0.72) {
+          settings.chatGlassOpacity = DEFAULT_SETTINGS.chatGlassOpacity;
+        }
+        if (parsed.chatGlassBlur === undefined) {
+          settings.chatGlassBlur = DEFAULT_SETTINGS.chatGlassBlur;
+        }
+        if (parsed.depthMode === undefined || parsed.depthMode === false) {
+          settings.depthMode = DEFAULT_SETTINGS.depthMode;
+        }
+        settings.readabilityVersion = 2;
         saveSettings(settings);
       }
       return settings;
@@ -156,33 +204,49 @@
 
   const state = {
     settings: loadSettings(),
+    characters: [],
     canvas: null,
     ctx: null,
+    cssWidth: 1280,
+    cssHeight: 800,
+    dpr: 1,
     styleEl: null,
     widgetEl: null,
     appearanceCardEl: null,
     observer: null,
+    mutationRafId: null,
     timerId: null,
     drops: [],
+    dropSpeeds: [],
+    dropAlphas: [],
     columns: 0,
     hue: -0.01,
     hueFw: false,
     currentNeonHex: "#00FF46",
     mounted: false,
   };
+  state.characters = getActiveCharacters(state.settings.glyphSet);
+
+  function computeRainbowRgb() {
+    const speed = (state.settings.rainbowSpeed ?? 50) / 100;
+    const rr = Math.floor(127 * Math.sin(speed * state.hue + 0) + 128);
+    const rg = Math.floor(127 * Math.sin(speed * state.hue + 2) + 128);
+    const rb = Math.floor(127 * Math.sin(speed * state.hue + 4) + 128);
+    return { r: rr, g: rg, b: rb };
+  }
+
+  function computeActiveThemeAccentRgb() {
+    if (state.settings.rainBow) {
+      return computeRainbowRgb();
+    }
+    return hexToRgb(state.settings.matrixColor);
+  }
 
   function computeActiveNeonRgb() {
     if (!state.settings.splitterMatchSymbol) {
       return hexToRgb(state.settings.splitterColor);
     }
-    if (state.settings.rainBow) {
-      const speed = (state.settings.rainbowSpeed ?? 50) / 100;
-      const rr = Math.floor(127 * Math.sin(speed * state.hue + 0) + 128);
-      const rg = Math.floor(127 * Math.sin(speed * state.hue + 2) + 128);
-      const rb = Math.floor(127 * Math.sin(speed * state.hue + 4) + 128);
-      return { r: rr, g: rg, b: rb };
-    }
-    return hexToRgb(state.settings.matrixColor);
+    return computeActiveThemeAccentRgb();
   }
 
   function updateCssVariables() {
@@ -191,26 +255,33 @@
     const s = state.settings;
     const bgRgb = hexToRgb(s.backgroundColor);
     const symRgb = hexToRgb(s.matrixColor);
+    const accentRgb = computeActiveThemeAccentRgb();
     const neonRgb = computeActiveNeonRgb();
     const neonHex = rgbToHex(neonRgb);
     state.currentNeonHex = neonHex;
 
     const glowScale = Math.max(0, Math.min(2, (s.splitterGlowIntensity ?? 100) / 100));
     const corePx = Math.max(1, Math.min(6, Number(s.splitterThickness) || 2));
-    const glassAlpha = Math.max(0.1, Math.min(0.96, Number(s.uiOpacity) ?? 0.68));
+    const glassAlpha = Math.max(0.1, Math.min(0.96, Number(s.uiOpacity) ?? 0.72));
+    const chatGlassAlpha = Math.max(0.1, Math.min(0.85, Number(s.chatGlassOpacity) ?? 0.38));
+    const chatGlassBlur = Math.max(0, Math.min(20, Number(s.chatGlassBlur) ?? 6));
     const sidebarAlpha = 1; // Sidebar stays solid regardless of chat opacity.
     const rainAlpha = Math.max(0.15, Math.min(1, Number(s.rainOpacity) ?? 0.85));
 
     root.toggleAttribute("data-t3-matrix-rain", Boolean(s.enabled));
     root.toggleAttribute("data-t3-matrix-overlay", Boolean(s.enabled && s.overlayBlend));
+    root.toggleAttribute("data-t3-matrix-chat-glass", Boolean(s.enabled && s.chatGlass));
     root.style.setProperty("--matrix-bg-color", s.backgroundColor);
     root.style.setProperty("--matrix-bg-rgb", `${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}`);
     root.style.setProperty("--matrix-symbol-color", s.matrixColor);
     root.style.setProperty("--matrix-symbol-rgb", `${symRgb.r}, ${symRgb.g}, ${symRgb.b}`);
+    root.style.setProperty("--matrix-theme-accent-rgb", `${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}`);
     root.style.setProperty("--matrix-neon-color", neonHex);
     root.style.setProperty("--matrix-neon-rgb", `${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}`);
     root.style.setProperty("--matrix-splitter-width", `${corePx}px`);
     root.style.setProperty("--matrix-ui-alpha", String(glassAlpha));
+    root.style.setProperty("--matrix-chat-glass-alpha", String(chatGlassAlpha));
+    root.style.setProperty("--matrix-chat-glass-blur", `${chatGlassBlur}px`);
     root.style.setProperty("--matrix-sidebar-alpha", String(sidebarAlpha));
     root.style.setProperty("--matrix-rain-opacity", String(rainAlpha));
     root.style.setProperty(
@@ -222,7 +293,7 @@
         : "none"
     );
     root.style.setProperty(
-      "--matrix-splitter-shadow-Strong",
+      "--matrix-splitter-shadow-strong",
       glowScale > 0
         ? `0 0 ${Math.round(8 * glowScale)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 1), ` +
             `0 0 ${Math.round(18 * glowScale)}px rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 0.92), ` +
@@ -311,6 +382,108 @@
       }
 
       /* =====================================================================
+       * GLASSY CHAT READABILITY WINDOW
+       * Dynamic frosted theme-tinted glass behind the centered chat timeline
+       * ===================================================================== */
+      @keyframes t3-matrix-glass-sheen {
+        0%, 100% {
+          background-position: 0% 0%, 0% 0%;
+        }
+        50% {
+          background-position: 100% 100%, 0% 0%;
+        }
+      }
+
+      @keyframes t3-matrix-glass-pulse {
+        0%, 100% {
+          border-left-color: rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.18);
+          border-right-color: rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.18);
+          box-shadow:
+            inset 1px 0 0 rgba(255, 255, 255, 0.04),
+            inset -1px 0 0 rgba(255, 255, 255, 0.04),
+            0 0 24px rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.07);
+        }
+        50% {
+          border-left-color: rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.36);
+          border-right-color: rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.36);
+          box-shadow:
+            inset 1px 0 0 rgba(255, 255, 255, 0.08),
+            inset -1px 0 0 rgba(255, 255, 255, 0.08),
+            0 0 34px rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.15);
+        }
+      }
+
+      html[data-t3-matrix-rain][data-t3-matrix-chat-glass] [data-assistant-citation-viewport="true"]::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: calc(50% + (var(--chat-lane-inset-start, 0px) - var(--chat-lane-inset-end, 0px)) / 2);
+        transform: translateX(-50%);
+        width: min(
+          calc(var(--chat-content-max-width, 46rem) + 3.5rem),
+          calc(100% - var(--chat-lane-inset-start, 0px) - var(--chat-lane-inset-end, 0px))
+        );
+        border-radius: 0;
+        background-image:
+          linear-gradient(
+            125deg,
+            rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.10) 0%,
+            rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.02) 30%,
+            rgba(255, 255, 255, 0.045) 50%,
+            rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.02) 70%,
+            rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.08) 100%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(var(--matrix-bg-rgb, 0, 0, 0), var(--matrix-chat-glass-alpha, 0.38)),
+            rgba(var(--matrix-bg-rgb, 0, 0, 0), var(--matrix-chat-glass-alpha, 0.38))
+          );
+        background-size: 240% 240%, 100% 100%;
+        border: none;
+        border-left: 1px solid rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.24);
+        border-right: 1px solid rgba(var(--matrix-theme-accent-rgb, 0, 255, 70), 0.24);
+        backdrop-filter: blur(var(--matrix-chat-glass-blur, 6px)) saturate(140%) brightness(1.06);
+        -webkit-backdrop-filter: blur(var(--matrix-chat-glass-blur, 6px)) saturate(140%) brightness(1.06);
+        pointer-events: none;
+        z-index: 0;
+        animation:
+          t3-matrix-glass-sheen 12s ease-in-out infinite,
+          t3-matrix-glass-pulse 5.5s ease-in-out infinite;
+      }
+
+      html[data-t3-matrix-rain][data-t3-matrix-chat-glass] [data-assistant-citation-viewport="true"] > .messages-timeline-scroll {
+        position: relative;
+        z-index: 1;
+        -webkit-mask-image:
+          linear-gradient(
+            to bottom,
+            transparent 0px,
+            #000 calc(var(--workspace-titlebar-scroll-fade-height, 24px) + 10px),
+            #000 calc(100% - 36px),
+            transparent 100%
+          ),
+          linear-gradient(#000, #000) !important;
+        -webkit-mask-position: left top, right top !important;
+        -webkit-mask-size: calc(100% - 14px) 100%, 14px 100% !important;
+        -webkit-mask-repeat: no-repeat, no-repeat !important;
+        -webkit-mask-composite: source-over !important;
+        mask-image:
+          linear-gradient(
+            to bottom,
+            transparent 0px,
+            #000 calc(var(--workspace-titlebar-scroll-fade-height, 24px) + 10px),
+            #000 calc(100% - 36px),
+            transparent 100%
+          ),
+          linear-gradient(#000, #000) !important;
+        mask-position: left top, right top !important;
+        mask-size: calc(100% - 14px) 100%, 14px 100% !important;
+        mask-repeat: no-repeat, no-repeat !important;
+        mask-composite: add !important;
+      }
+
+      /* =====================================================================
        * NEON SPLITTERS FOR T3 CODE
        * Matches Sidebar Rail, Right Panel Resize Handle, Terminal Drawer
        * Horizontal Handle, Browser Viewport Handles, and Demo Splitters
@@ -337,19 +510,17 @@
       html[data-t3-matrix-rain] [data-sidebar="rail"]:hover::after,
       html[data-t3-matrix-rain] [data-sidebar="rail"]:active::after {
         width: calc(var(--matrix-splitter-width, 2px) + 1px) !important;
-        box-shadow: var(--matrix-splitter-shadow-Strong) !important;
+        box-shadow: var(--matrix-splitter-shadow-strong) !important;
         opacity: 1 !important;
       }
 
-      /* 2. Vertical Panel Splitters (RightPanelResizeHandle / role="separator" / cursor-col-resize / cursor-ew-resize) */
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="vertical"],
+      /* 2. Vertical Panel Splitters (RightPanelResizeHandle .cursor-col-resize / .cursor-ew-resize) */
       html[data-t3-matrix-rain] .cursor-col-resize,
       html[data-t3-matrix-rain] .cursor-ew-resize,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical {
         z-index: 60 !important;
       }
 
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="vertical"] > span,
       html[data-t3-matrix-rain] .cursor-col-resize > span,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical > span {
         background-color: var(--matrix-neon-color, #00FF46) !important;
@@ -359,19 +530,17 @@
         transition: box-shadow 150ms ease, width 150ms ease, opacity 150ms ease !important;
       }
 
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="vertical"]:hover > span,
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="vertical"]:active > span,
       html[data-t3-matrix-rain] .cursor-col-resize:hover > span,
       html[data-t3-matrix-rain] .cursor-col-resize:active > span,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical:hover > span,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical:active > span {
         width: calc(var(--matrix-splitter-width, 2px) + 1px) !important;
-        box-shadow: var(--matrix-splitter-shadow-Strong) !important;
+        box-shadow: var(--matrix-splitter-shadow-strong) !important;
         opacity: 1 !important;
       }
 
-      /* Fallback pseudo-line for vertical splitters without an inner <span> */
-      html[data-t3-matrix-rain] .cursor-col-resize:not(:has(> span))::after,
+      /* Fallback pseudo-line for vertical splitters without an inner <span> (excluding sidebar-rail) */
+      html[data-t3-matrix-rain] .cursor-col-resize:not([data-slot="sidebar-rail"]):not([data-sidebar="rail"]):not(:has(> span))::after,
       html[data-t3-matrix-rain] .cursor-ew-resize:not(:has(> span))::after,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical:not(:has(> span))::after {
         content: "";
@@ -387,22 +556,20 @@
         transition: box-shadow 150ms ease, width 150ms ease;
       }
 
-      html[data-t3-matrix-rain] .cursor-col-resize:not(:has(> span)):hover::after,
+      html[data-t3-matrix-rain] .cursor-col-resize:not([data-slot="sidebar-rail"]):not([data-sidebar="rail"]):not(:has(> span)):hover::after,
       html[data-t3-matrix-rain] .cursor-ew-resize:not(:has(> span)):hover::after,
       html[data-t3-matrix-rain] .t3-matrix-splitter-vertical:not(:has(> span)):hover::after {
         width: calc(var(--matrix-splitter-width, 2px) + 1px);
-        box-shadow: var(--matrix-splitter-shadow-Strong);
+        box-shadow: var(--matrix-splitter-shadow-strong);
       }
 
-      /* 3. Horizontal Panel Splitters (Terminal Drawer .cursor-row-resize / .cursor-ns-resize / role="separator"[aria-orientation="horizontal"]) */
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="horizontal"],
+      /* 3. Horizontal Panel Splitters (Terminal Drawer .cursor-row-resize / .cursor-ns-resize) */
       html[data-t3-matrix-rain] .cursor-row-resize,
       html[data-t3-matrix-rain] .cursor-ns-resize,
       html[data-t3-matrix-rain] .t3-matrix-splitter-horizontal {
         z-index: 60 !important;
       }
 
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="horizontal"]::after,
       html[data-t3-matrix-rain] .cursor-row-resize::after,
       html[data-t3-matrix-rain] .cursor-ns-resize::after,
       html[data-t3-matrix-rain] .t3-matrix-splitter-horizontal::after {
@@ -420,12 +587,11 @@
         transition: box-shadow 150ms ease, height 150ms ease, opacity 150ms ease;
       }
 
-      html[data-t3-matrix-rain] [role="separator"][aria-orientation="horizontal"]:hover::after,
       html[data-t3-matrix-rain] .cursor-row-resize:hover::after,
       html[data-t3-matrix-rain] .cursor-ns-resize:hover::after,
       html[data-t3-matrix-rain] .t3-matrix-splitter-horizontal:hover::after {
         height: calc(var(--matrix-splitter-width, 2px) + 1px);
-        box-shadow: var(--matrix-splitter-shadow-Strong);
+        box-shadow: var(--matrix-splitter-shadow-strong);
         opacity: 1;
       }
 
@@ -441,6 +607,10 @@
         font-size: 12px;
         color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 12%, #fff);
         user-select: none;
+      }
+
+      #t3-matrix-controller[data-pill-hidden="true"] #t3-matrix-pill-bar {
+        display: none !important;
       }
 
       #t3-matrix-pill {
@@ -487,7 +657,7 @@
         position: absolute;
         right: 0;
         bottom: 42px;
-        width: min(360px, calc(100vw - 32px));
+        width: min(370px, calc(100vw - 32px));
         box-sizing: border-box;
         max-height: calc(100vh - 80px);
         overflow-y: auto;
@@ -499,11 +669,20 @@
         backdrop-filter: blur(16px);
         display: none;
         flex-direction: column;
-        gap: 11px;
+        gap: 10px;
       }
 
       #t3-matrix-controller[data-open="true"] #t3-matrix-popover {
         display: flex;
+      }
+
+      .t3-matrix-section-title {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 72%, #fff);
+        margin-top: 2px;
       }
 
       .t3-matrix-row {
@@ -594,6 +773,22 @@
         color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 18%, #fff);
       }
 
+      .t3-matrix-select {
+        height: 26px;
+        padding: 0 8px;
+        border-radius: 7px;
+        font-size: 11.5px;
+        background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.92);
+        color: color-mix(in srgb, var(--matrix-symbol-color, #00FF46) 20%, #fff);
+        border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.35);
+        cursor: pointer;
+        outline: none;
+      }
+
+      .t3-matrix-select:focus {
+        border-color: var(--matrix-symbol-color, #00FF46);
+      }
+
       .t3-matrix-slider-wrap {
         display: flex;
         align-items: center;
@@ -630,11 +825,12 @@
         padding-top: 2px;
       }
 
-      .t3-matrix-preset-btn {
+      .t3-matrix-preset-btn,
+      .t3-matrix-action-btn {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        padding: 3px 8px;
+        padding: 4px 8px;
         border-radius: 6px;
         font-size: 10.5px;
         background: rgba(255, 255, 255, 0.04);
@@ -644,9 +840,18 @@
         transition: all 130ms ease;
       }
 
-      .t3-matrix-preset-btn:hover {
+      .t3-matrix-preset-btn:hover,
+      .t3-matrix-action-btn:hover {
         border-color: var(--matrix-symbol-color, #00FF46);
         background: rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.12);
+      }
+
+      .t3-matrix-footer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding-top: 2px;
       }
 
       .t3-matrix-divider {
@@ -657,40 +862,60 @@
     `;
   }
 
-  // Resize & initialize drop columns
+  // Resize & initialize drop columns with HiDPI crisp scaling
   function resizeCanvas() {
-    if (!state.canvas) return;
+    if (!state.canvas || !state.ctx) return;
     const w = Math.max(300, window.innerWidth || document.documentElement.clientWidth || 1280);
     const h = Math.max(200, window.innerHeight || document.documentElement.clientHeight || 800);
-    state.canvas.width = w;
-    state.canvas.height = h;
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    state.cssWidth = w;
+    state.cssHeight = h;
+    state.dpr = dpr;
+
+    state.canvas.width = Math.round(w * dpr);
+    state.canvas.height = Math.round(h * dpr);
+    state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     const fontSize = Math.max(10, Math.min(28, Number(state.settings.fontSize) || 14));
     const cols = Math.ceil(w / fontSize);
     const nextDrops = [];
+    const nextSpeeds = [];
+    const nextAlphas = [];
+    const maxStartRow = Math.max(20, Math.floor(h / fontSize));
+
     for (let x = 0; x < cols; x++) {
       nextDrops[x] =
-        state.drops[x] !== undefined
-          ? state.drops[x]
-          : Math.floor(Math.random() * Math.max(20, Math.floor(h / fontSize)));
+        state.drops[x] !== undefined ? state.drops[x] : Math.floor(Math.random() * maxStartRow);
+      nextSpeeds[x] =
+        state.dropSpeeds[x] !== undefined ? state.dropSpeeds[x] : 0.45 + Math.random() * 0.55;
+      nextAlphas[x] =
+        state.dropAlphas[x] !== undefined ? state.dropAlphas[x] : 0.45 + Math.random() * 0.55;
     }
+
     state.columns = cols;
     state.drops = nextDrops;
+    state.dropSpeeds = nextSpeeds;
+    state.dropAlphas = nextAlphas;
   }
 
-  // Core Matrix draw step — faithful to bad1dea/lively_matrix/script.js with customizable BG & neon sync
+  // Core Matrix draw step — faithful to bad1dea/lively_matrix/script.js with HiDPI, depth & theme sync
   function drawMatrixFrame() {
     if (!state.settings.enabled || !state.ctx || !state.canvas) return;
     const ctx = state.ctx;
-    const c = state.canvas;
+    const w = state.cssWidth;
+    const h = state.cssHeight;
     const s = state.settings;
+    const chars = state.characters;
     const fontSize = Math.max(10, Math.min(28, Number(s.fontSize) || 14));
     const bgRgb = hexToRgb(s.backgroundColor);
     const waveRgb = hexToRgb(s.matrixColor);
     const trailAlpha = Math.max(0.02, Math.min(0.25, Number(s.trailOpacity) || 0.06));
+    const useDepth = Boolean(s.depthMode);
 
     // Translucent BG fill to create the classic fading trail
     ctx.fillStyle = `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${trailAlpha})`;
-    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillRect(0, 0, w, h);
 
     ctx.font = `${fontSize}px monospace, arial`;
 
@@ -700,7 +925,8 @@
     const rainbowSpeed = (Number(s.rainbowSpeed) || 50) / 100;
 
     for (let i = 0; i < state.drops.length; i++) {
-      const y = state.drops[i] * fontSize;
+      const row = Math.floor(state.drops[i]);
+      const y = row * fontSize;
       const x = i * fontSize;
 
       if (y >= 0) {
@@ -708,7 +934,7 @@
         ctx.fillStyle = `rgba(${cellBgR}, ${cellBgG}, ${cellBgB}, 0.92)`;
         ctx.fillRect(x, y - fontSize + 2, fontSize, fontSize);
 
-        const text = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+        const text = chars[Math.floor(Math.random() * chars.length)];
 
         let rr = waveRgb.r;
         let rg = waveRgb.g;
@@ -721,25 +947,33 @@
           rb = Math.floor(127 * Math.sin(rainbowSpeed * state.hue + 4) + 128);
         }
 
-        ctx.fillStyle = `rgb(${rr}, ${rg}, ${rb})`;
+        const colAlpha = useDepth ? state.dropAlphas[i] ?? 1 : 1;
+        ctx.fillStyle = colAlpha < 0.99 ? `rgba(${rr}, ${rg}, ${rb}, ${colAlpha.toFixed(2)})` : `rgb(${rr}, ${rg}, ${rb})`;
         ctx.fillText(text, x, y);
 
-        // Optional bright phosphor highlight on the leading drop glyph
+        // Bright phosphor lead glyph tinted to match the active drop color
         if (s.headHighlight && Math.random() > 0.35) {
-          ctx.fillStyle = `rgba(225, 255, 235, 0.55)`;
+          const hr = Math.round(rr + (255 - rr) * 0.72);
+          const hg = Math.round(rg + (255 - rg) * 0.72);
+          const hb = Math.round(rb + (255 - rb) * 0.72);
+          ctx.fillStyle = `rgba(${hr}, ${hg}, ${hb}, ${(0.62 * colAlpha).toFixed(2)})`;
           ctx.fillText(text, x, y);
         }
       }
 
-      state.drops[i]++;
+      state.drops[i] += useDepth ? state.dropSpeeds[i] ?? 1 : 1;
 
-      if (state.drops[i] * fontSize > c.height && Math.random() > 0.975) {
+      if (state.drops[i] * fontSize > h && Math.random() > 0.975) {
         state.drops[i] = 0;
+        if (useDepth) {
+          state.dropSpeeds[i] = 0.45 + Math.random() * 0.55;
+          state.dropAlphas[i] = 0.45 + Math.random() * 0.55;
+        }
       }
     }
 
-    // If rainbow mode + splitter sync is active, keep splitter neon synced with the rainbow wave
-    if (s.rainBow && s.splitterMatchSymbol) {
+    // If rainbow mode is active, keep synced splitters and chat glass border cycling smoothly
+    if (s.rainBow && (s.splitterMatchSymbol || s.chatGlass)) {
       updateCssVariables();
     }
   }
@@ -752,21 +986,40 @@
     }
   }
 
-  function restartLoop() {
+  function stopLoop() {
     if (state.timerId !== null) {
       window.clearInterval(state.timerId);
       state.timerId = null;
     }
+  }
+
+  function restartLoop(ignoreHidden = false) {
+    stopLoop();
     if (!state.settings.enabled) return;
-    const intervalMs = Math.max(10, Math.min(200, Number(state.settings.matrixSpeed) || 50));
+    if (!ignoreHidden && document.visibilityState === "hidden") return;
+    const intervalMs = Math.max(10, Math.min(200, Number(state.settings.matrixSpeed) || 42));
     state.timerId = window.setInterval(drawMatrixFrame, intervalMs);
+  }
+
+  function ensureLoopRunning() {
+    if (state.settings.enabled && state.timerId === null && document.visibilityState !== "hidden") {
+      restartLoop();
+    }
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === "hidden") {
+      stopLoop();
+    } else if (state.settings.enabled) {
+      restartLoop();
+    }
   }
 
   function clearCanvasWithBg() {
     if (!state.ctx || !state.canvas) return;
     const bgRgb = hexToRgb(state.settings.backgroundColor);
     state.ctx.fillStyle = `rgb(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b})`;
-    state.ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
+    state.ctx.fillRect(0, 0, state.cssWidth, state.cssHeight);
   }
 
   function updateSetting(patch) {
@@ -774,17 +1027,26 @@
     const prevEnabled = state.settings.enabled;
     const prevFontSize = state.settings.fontSize;
     const prevBg = state.settings.backgroundColor;
+    const prevGlyphSet = state.settings.glyphSet;
 
     state.settings = { ...state.settings, ...patch };
+    if (!GLYPH_SETS[state.settings.glyphSet]) {
+      state.settings.glyphSet = DEFAULT_SETTINGS.glyphSet;
+    }
+    if (state.settings.glyphSet !== prevGlyphSet) {
+      state.characters = getActiveCharacters(state.settings.glyphSet);
+    }
+
     saveSettings(state.settings);
     updateCssVariables();
 
     if (state.settings.fontSize !== prevFontSize) {
       resizeCanvas();
-    }
-    if (state.settings.backgroundColor !== prevBg) {
+      clearCanvasWithBg();
+    } else if (state.settings.backgroundColor !== prevBg) {
       clearCanvasWithBg();
     }
+
     if (state.settings.enabled !== prevEnabled || state.settings.matrixSpeed !== prevSpeed) {
       if (state.settings.enabled && !prevEnabled) {
         prewarmCanvas(20);
@@ -793,6 +1055,12 @@
     }
 
     syncUIControls();
+  }
+
+  function resetSettings() {
+    const keepOpen = state.settings.panelOpen;
+    updateSetting({ ...DEFAULT_SETTINGS, panelOpen: keepOpen });
+    prewarmCanvas(20);
   }
 
   // Lively Wallpaper property listener compatibility (from bad1dea/lively_matrix/script.js)
@@ -820,6 +1088,21 @@
       case "splitterColor":
         updateSetting({ splitterColor: String(val), splitterMatchSymbol: false });
         break;
+      case "chatGlass":
+        updateSetting({ chatGlass: Boolean(val) });
+        break;
+      case "chatGlassOpacity":
+        updateSetting({ chatGlassOpacity: Number(val) });
+        break;
+      case "chatGlassBlur":
+        updateSetting({ chatGlassBlur: Number(val) });
+        break;
+      case "glyphSet":
+        updateSetting({ glyphSet: String(val) });
+        break;
+      case "depthMode":
+        updateSetting({ depthMode: Boolean(val) });
+        break;
     }
   }
 
@@ -829,17 +1112,51 @@
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
           <span>Matrix Rain Theme</span>
-          <span class="t3-matrix-sub">Toggle animation & neon splitters (Ctrl+Shift+M)</span>
+          <span class="t3-matrix-sub">Toggle animation, glass &amp; splitters (Ctrl+Shift+M)</span>
         </div>
         <button type="button" class="t3-matrix-switch" data-matrix-action="toggle-enabled" aria-checked="${s.enabled}" aria-label="Toggle Matrix Rain Theme"></button>
       </div>
 
       <div class="t3-matrix-divider"></div>
+      <div class="t3-matrix-section-title">Chat Readability Glass</div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Chat Glass Window</span>
+          <span class="t3-matrix-sub">Frosted theme-tinted panel behind messages</span>
+        </div>
+        <button type="button" class="t3-matrix-switch" data-matrix-action="toggle-chat-glass" aria-checked="${s.chatGlass}" aria-label="Toggle Chat Glass Window"></button>
+      </div>
+
+      <div class="t3-matrix-row" data-matrix-row="chatGlassOpacity" style="${s.chatGlass ? "" : "display:none"}">
+        <div class="t3-matrix-label">
+          <span>Chat Glass Tint</span>
+          <span class="t3-matrix-sub">Lower = more live rain through the glass</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="chatGlassOpacity" min="0.1" max="0.85" step="0.05" value="${s.chatGlassOpacity}" />
+          <span class="t3-matrix-badge" data-matrix-text="chatGlassOpacity">${Math.round(s.chatGlassOpacity * 100)}%</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-row" data-matrix-row="chatGlassBlur" style="${s.chatGlass ? "" : "display:none"}">
+        <div class="t3-matrix-label">
+          <span>Chat Glass Blur</span>
+          <span class="t3-matrix-sub">Frosted blur behind chat messages</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="chatGlassBlur" min="0" max="20" step="1" value="${s.chatGlassBlur}" />
+          <span class="t3-matrix-badge" data-matrix-text="chatGlassBlur">${s.chatGlassBlur} px</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-divider"></div>
+      <div class="t3-matrix-section-title">Colors &amp; Rain</div>
 
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
           <span>Symbol Color</span>
-          <span class="t3-matrix-sub">Katakana & digit rain glyph color</span>
+          <span class="t3-matrix-sub">Rain glyphs, chat glass &amp; accents</span>
         </div>
         <label class="t3-matrix-color-wrap">
           <input type="color" class="t3-matrix-color-input" data-matrix-input="matrixColor" value="${s.matrixColor}" />
@@ -850,12 +1167,24 @@
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
           <span>Background Color</span>
-          <span class="t3-matrix-sub">Canvas & translucent surface base</span>
+          <span class="t3-matrix-sub">Canvas &amp; translucent surface base</span>
         </div>
         <label class="t3-matrix-color-wrap">
           <input type="color" class="t3-matrix-color-input" data-matrix-input="backgroundColor" value="${s.backgroundColor}" />
           <span class="t3-matrix-color-hex" data-matrix-text="backgroundColor">${s.backgroundColor.toUpperCase()}</span>
         </label>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Glyph Set</span>
+          <span class="t3-matrix-sub">Character alphabet used for rain drops</span>
+        </div>
+        <select class="t3-matrix-select" data-matrix-input="glyphSet" aria-label="Glyph Set">
+          ${Object.entries(GLYPH_SETS)
+            .map(([key, def]) => `<option value="${key}"${s.glyphSet === key ? " selected" : ""}>${def.label}</option>`)
+            .join("")}
+        </select>
       </div>
 
       <div class="t3-matrix-row">
@@ -867,6 +1196,55 @@
           <input type="range" class="t3-matrix-slider" data-matrix-input="matrixSpeed" min="12" max="140" step="2" value="${s.matrixSpeed}" />
           <span class="t3-matrix-badge" data-matrix-text="matrixSpeed">${s.matrixSpeed} ms</span>
         </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Glyph Size</span>
+          <span class="t3-matrix-sub">Character size &amp; column density</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="fontSize" min="10" max="24" step="1" value="${s.fontSize}" />
+          <span class="t3-matrix-badge" data-matrix-text="fontSize">${s.fontSize} px</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Rain Intensity</span>
+          <span class="t3-matrix-sub">Overall canvas visibility</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="rainOpacity" min="0.15" max="1" step="0.05" value="${s.rainOpacity}" />
+          <span class="t3-matrix-badge" data-matrix-text="rainOpacity">${Math.round(s.rainOpacity * 100)}%</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Trail Fade</span>
+          <span class="t3-matrix-sub">Lower = longer glowing trails</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="trailOpacity" min="0.02" max="0.18" step="0.01" value="${s.trailOpacity}" />
+          <span class="t3-matrix-badge" data-matrix-text="trailOpacity">${Math.round(s.trailOpacity * 100)}%</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Depth Parallax</span>
+          <span class="t3-matrix-sub">Vary drop speed &amp; brightness per column</span>
+        </div>
+        <button type="button" class="t3-matrix-switch" data-matrix-action="toggle-depth" aria-checked="${s.depthMode}" aria-label="Toggle Depth Parallax"></button>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Phosphor Lead Glow</span>
+          <span class="t3-matrix-sub">Bright leading glyph on each drop</span>
+        </div>
+        <button type="button" class="t3-matrix-switch" data-matrix-action="toggle-head-highlight" aria-checked="${s.headHighlight}" aria-label="Toggle Phosphor Lead Glow"></button>
       </div>
 
       <div class="t3-matrix-row">
@@ -889,6 +1267,7 @@
       </div>
 
       <div class="t3-matrix-divider"></div>
+      <div class="t3-matrix-section-title">Splitters &amp; Surfaces</div>
 
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
@@ -901,7 +1280,7 @@
       <div class="t3-matrix-row" data-matrix-row="splitterColor" style="${s.splitterMatchSymbol ? "display:none" : ""}">
         <div class="t3-matrix-label">
           <span>Custom Splitter Neon</span>
-          <span class="t3-matrix-sub">Override splitter border & glow</span>
+          <span class="t3-matrix-sub">Override splitter border &amp; glow</span>
         </div>
         <label class="t3-matrix-color-wrap">
           <input type="color" class="t3-matrix-color-input" data-matrix-input="splitterColor" value="${s.splitterColor}" />
@@ -922,6 +1301,17 @@
 
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
+          <span>Splitter Thickness</span>
+          <span class="t3-matrix-sub">Visible neon core line width</span>
+        </div>
+        <div class="t3-matrix-slider-wrap">
+          <input type="range" class="t3-matrix-slider" data-matrix-input="splitterThickness" min="1" max="4" step="1" value="${s.splitterThickness}" />
+          <span class="t3-matrix-badge" data-matrix-text="splitterThickness">${s.splitterThickness} px</span>
+        </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
           <span>Screen Glow Overlay</span>
           <span class="t3-matrix-sub">Blend rain with the background behind panels</span>
         </div>
@@ -931,12 +1321,20 @@
       <div class="t3-matrix-row">
         <div class="t3-matrix-label">
           <span>UI Surface Opacity</span>
-          <span class="t3-matrix-sub">How much rain shows through panels</span>
+          <span class="t3-matrix-sub">How much rain shows through workspace panes</span>
         </div>
         <div class="t3-matrix-slider-wrap">
           <input type="range" class="t3-matrix-slider" data-matrix-input="uiOpacity" min="0.15" max="0.95" step="0.05" value="${s.uiOpacity}" />
           <span class="t3-matrix-badge" data-matrix-text="uiOpacity">${Math.round(s.uiOpacity * 100)}%</span>
         </div>
+      </div>
+
+      <div class="t3-matrix-row">
+        <div class="t3-matrix-label">
+          <span>Show Floating Pill</span>
+          <span class="t3-matrix-sub">Bottom-right quick toggle (always in Appearance)</span>
+        </div>
+        <button type="button" class="t3-matrix-switch" data-matrix-action="toggle-show-pill" aria-checked="${s.showPill}" aria-label="Show Floating Pill"></button>
       </div>
 
       <div class="t3-matrix-divider"></div>
@@ -949,6 +1347,11 @@
             ${p.name}
           </button>`
         ).join("")}
+      </div>
+
+      <div class="t3-matrix-footer-row">
+        <span class="t3-matrix-sub">Esc to close · Ctrl+Shift+M to toggle</span>
+        <button type="button" class="t3-matrix-action-btn" data-matrix-action="reset-defaults">Reset defaults</button>
       </div>
     `;
   }
@@ -964,14 +1367,25 @@
       const action = target.getAttribute("data-matrix-action");
       if (action === "toggle-enabled") {
         updateSetting({ enabled: !state.settings.enabled });
+      } else if (action === "toggle-chat-glass") {
+        updateSetting({ chatGlass: !state.settings.chatGlass });
+      } else if (action === "toggle-depth") {
+        updateSetting({ depthMode: !state.settings.depthMode });
+      } else if (action === "toggle-head-highlight") {
+        updateSetting({ headHighlight: !state.settings.headHighlight });
       } else if (action === "toggle-rainbow") {
         updateSetting({ rainBow: !state.settings.rainBow });
       } else if (action === "toggle-splitter-sync") {
         updateSetting({ splitterMatchSymbol: !state.settings.splitterMatchSymbol });
       } else if (action === "toggle-overlay") {
         updateSetting({ overlayBlend: !state.settings.overlayBlend });
+      } else if (action === "toggle-show-pill") {
+        const nextShow = !state.settings.showPill;
+        updateSetting({ showPill: nextShow, panelOpen: nextShow ? state.settings.panelOpen : false });
       } else if (action === "toggle-popover") {
         updateSetting({ panelOpen: !state.settings.panelOpen });
+      } else if (action === "reset-defaults") {
+        resetSettings();
       } else if (target.hasAttribute("data-matrix-preset-sym")) {
         updateSetting({
           enabled: true,
@@ -982,19 +1396,31 @@
       }
     });
 
-    container.addEventListener("input", (e) => {
+    const handleFieldUpdate = (e) => {
       const input = e.target.closest("[data-matrix-input]");
       if (!input) return;
       const key = input.getAttribute("data-matrix-input");
       const rawVal = input.value;
-      if (key === "matrixColor" || key === "backgroundColor" || key === "splitterColor") {
+      if (key === "matrixColor" || key === "backgroundColor" || key === "splitterColor" || key === "glyphSet") {
         updateSetting({ [key]: rawVal });
-      } else if (key === "matrixSpeed" || key === "rainbowSpeed" || key === "splitterGlowIntensity") {
+      } else if (
+        key === "matrixSpeed" ||
+        key === "fontSize" ||
+        key === "rainOpacity" ||
+        key === "trailOpacity" ||
+        key === "rainbowSpeed" ||
+        key === "splitterGlowIntensity" ||
+        key === "splitterThickness" ||
+        key === "uiOpacity" ||
+        key === "chatGlassOpacity" ||
+        key === "chatGlassBlur"
+      ) {
         updateSetting({ [key]: Number(rawVal) });
-      } else if (key === "uiOpacity") {
-        updateSetting({ uiOpacity: Number(rawVal) });
       }
-    });
+    };
+
+    container.addEventListener("input", handleFieldUpdate);
+    container.addEventListener("change", handleFieldUpdate);
   }
 
   function syncUIControls() {
@@ -1002,23 +1428,32 @@
     if (state.widgetEl) {
       state.widgetEl.setAttribute("data-enabled", String(Boolean(s.enabled)));
       state.widgetEl.setAttribute("data-open", String(Boolean(s.panelOpen)));
+      state.widgetEl.setAttribute("data-pill-hidden", String(!s.showPill));
       const labelEl = state.widgetEl.querySelector("[data-matrix-pill-status]");
       if (labelEl) labelEl.textContent = s.enabled ? "Matrix ON" : "Matrix OFF";
     }
 
     const roots = [state.widgetEl, state.appearanceCardEl].filter(Boolean);
     for (const root of roots) {
-      const enSwitch = root.querySelector('[data-matrix-action="toggle-enabled"]');
-      if (enSwitch) enSwitch.setAttribute("aria-checked", String(Boolean(s.enabled)));
+      const setSwitch = (action, val) => {
+        const el = root.querySelector(`[data-matrix-action="${action}"]`);
+        if (el) el.setAttribute("aria-checked", String(Boolean(val)));
+      };
 
-      const rbSwitch = root.querySelector('[data-matrix-action="toggle-rainbow"]');
-      if (rbSwitch) rbSwitch.setAttribute("aria-checked", String(Boolean(s.rainBow)));
+      setSwitch("toggle-enabled", s.enabled);
+      setSwitch("toggle-chat-glass", s.chatGlass);
+      setSwitch("toggle-depth", s.depthMode);
+      setSwitch("toggle-head-highlight", s.headHighlight);
+      setSwitch("toggle-rainbow", s.rainBow);
+      setSwitch("toggle-splitter-sync", s.splitterMatchSymbol);
+      setSwitch("toggle-overlay", s.overlayBlend);
+      setSwitch("toggle-show-pill", s.showPill);
 
-      const spSwitch = root.querySelector('[data-matrix-action="toggle-splitter-sync"]');
-      if (spSwitch) spSwitch.setAttribute("aria-checked", String(Boolean(s.splitterMatchSymbol)));
+      const glassRow = root.querySelector('[data-matrix-row="chatGlassOpacity"]');
+      if (glassRow) glassRow.style.display = s.chatGlass ? "flex" : "none";
 
-      const ovSwitch = root.querySelector('[data-matrix-action="toggle-overlay"]');
-      if (ovSwitch) ovSwitch.setAttribute("aria-checked", String(Boolean(s.overlayBlend)));
+      const glassBlurRow = root.querySelector('[data-matrix-row="chatGlassBlur"]');
+      if (glassBlurRow) glassBlurRow.style.display = s.chatGlass ? "flex" : "none";
 
       const rbRow = root.querySelector('[data-matrix-row="rainbowSpeed"]');
       if (rbRow) rbRow.style.opacity = s.rainBow ? "1" : "0.45";
@@ -1030,10 +1465,17 @@
         "matrixColor",
         "backgroundColor",
         "splitterColor",
+        "glyphSet",
         "matrixSpeed",
+        "fontSize",
+        "rainOpacity",
+        "trailOpacity",
         "rainbowSpeed",
         "splitterGlowIntensity",
+        "splitterThickness",
         "uiOpacity",
+        "chatGlassOpacity",
+        "chatGlassBlur",
       ]) {
         const inputEl = root.querySelector(`[data-matrix-input="${key}"]`);
         if (inputEl && document.activeElement !== inputEl) {
@@ -1041,20 +1483,24 @@
         }
       }
 
-      const txtSym = root.querySelector('[data-matrix-text="matrixColor"]');
-      if (txtSym) txtSym.textContent = s.matrixColor.toUpperCase();
-      const txtBg = root.querySelector('[data-matrix-text="backgroundColor"]');
-      if (txtBg) txtBg.textContent = s.backgroundColor.toUpperCase();
-      const txtSp = root.querySelector('[data-matrix-text="splitterColor"]');
-      if (txtSp) txtSp.textContent = s.splitterColor.toUpperCase();
-      const txtSpeed = root.querySelector('[data-matrix-text="matrixSpeed"]');
-      if (txtSpeed) txtSpeed.textContent = `${s.matrixSpeed} ms`;
-      const txtRb = root.querySelector('[data-matrix-text="rainbowSpeed"]');
-      if (txtRb) txtRb.textContent = `${s.rainbowSpeed}%`;
-      const txtGlow = root.querySelector('[data-matrix-text="splitterGlowIntensity"]');
-      if (txtGlow) txtGlow.textContent = `${s.splitterGlowIntensity}%`;
-      const txtOp = root.querySelector('[data-matrix-text="uiOpacity"]');
-      if (txtOp) txtOp.textContent = `${Math.round(s.uiOpacity * 100)}%`;
+      const setText = (key, text) => {
+        const el = root.querySelector(`[data-matrix-text="${key}"]`);
+        if (el) el.textContent = text;
+      };
+
+      setText("matrixColor", s.matrixColor.toUpperCase());
+      setText("backgroundColor", s.backgroundColor.toUpperCase());
+      setText("splitterColor", s.splitterColor.toUpperCase());
+      setText("matrixSpeed", `${s.matrixSpeed} ms`);
+      setText("fontSize", `${s.fontSize} px`);
+      setText("rainOpacity", `${Math.round(s.rainOpacity * 100)}%`);
+      setText("trailOpacity", `${Math.round(s.trailOpacity * 100)}%`);
+      setText("rainbowSpeed", `${s.rainbowSpeed}%`);
+      setText("splitterGlowIntensity", `${s.splitterGlowIntensity}%`);
+      setText("splitterThickness", `${s.splitterThickness} px`);
+      setText("uiOpacity", `${Math.round(s.uiOpacity * 100)}%`);
+      setText("chatGlassOpacity", `${Math.round(s.chatGlassOpacity * 100)}%`);
+      setText("chatGlassBlur", `${s.chatGlassBlur} px`);
     }
   }
 
@@ -1065,11 +1511,12 @@
     widget.id = "t3-matrix-controller";
     widget.setAttribute("data-enabled", String(Boolean(state.settings.enabled)));
     widget.setAttribute("data-open", String(Boolean(state.settings.panelOpen)));
+    widget.setAttribute("data-pill-hidden", String(!state.settings.showPill));
     widget.innerHTML = `
       <div id="t3-matrix-popover" role="dialog" aria-label="Matrix Rain Theme Settings">
         ${renderControlsInnerHtml()}
       </div>
-      <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+      <div id="t3-matrix-pill-bar" style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
         <button type="button" id="t3-matrix-pill" data-matrix-action="toggle-popover" title="Customize Matrix Rain Theme (Ctrl+Shift+M to quick toggle)">
           <span id="t3-matrix-pill-dot"></span>
           <span style="font-family:monospace;font-weight:700;letter-spacing:0.03em">ｱ</span>
@@ -1097,7 +1544,7 @@
     const card = document.createElement("div");
     card.id = "t3-matrix-appearance-card";
     card.style.cssText =
-      "margin-top: 14px; padding: 16px; border-radius: 12px; border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.45); background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.84); display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 65;";
+      "margin-top: 14px; padding: 16px; border-radius: 12px; border: 1px solid rgba(var(--matrix-symbol-rgb, 0, 255, 70), 0.45); background: rgba(var(--matrix-bg-rgb, 0, 0, 0), 0.84); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 65;";
     card.innerHTML = renderControlsInnerHtml();
     bindControlEvents(card);
     appearanceSection.appendChild(card);
@@ -1108,7 +1555,36 @@
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
       e.preventDefault();
       updateSetting({ enabled: !state.settings.enabled });
+    } else if (e.key === "Escape" && state.settings.panelOpen) {
+      updateSetting({ panelOpen: false });
     }
+  }
+
+  function onDocumentPointerDown(e) {
+    if (!state.settings.panelOpen || !state.widgetEl) return;
+    if (!state.widgetEl.contains(e.target)) {
+      updateSetting({ panelOpen: false });
+    }
+  }
+
+  function reconcileDom() {
+    state.mutationRafId = null;
+    if (!state.mounted) return;
+    if (state.canvas && !document.body.contains(state.canvas)) {
+      document.body.prepend(state.canvas);
+    }
+    if (state.widgetEl && !document.body.contains(state.widgetEl)) {
+      document.body.appendChild(state.widgetEl);
+    }
+    if (state.styleEl && !document.head.contains(state.styleEl)) {
+      document.head.appendChild(state.styleEl);
+    }
+    maybeInjectAppearanceSettingsCard();
+  }
+
+  function scheduleReconcileDom() {
+    if (state.mutationRafId !== null) return;
+    state.mutationRafId = window.requestAnimationFrame(reconcileDom);
   }
 
   function mountMod() {
@@ -1137,24 +1613,17 @@
     updateCssVariables();
     resizeCanvas();
     prewarmCanvas(28);
-    restartLoop();
+    restartLoop(true);
     maybeInjectAppearanceSettingsCard();
 
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("focus", ensureLoopRunning);
+    window.addEventListener("pageshow", ensureLoopRunning);
+    document.addEventListener("pointerdown", onDocumentPointerDown, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
-    const observer = new MutationObserver(() => {
-      if (state.canvas && !document.body.contains(state.canvas)) {
-        document.body.prepend(state.canvas);
-      }
-      if (state.widgetEl && !document.body.contains(state.widgetEl)) {
-        document.body.appendChild(state.widgetEl);
-      }
-      if (state.styleEl && !document.head.contains(state.styleEl)) {
-        document.head.appendChild(state.styleEl);
-      }
-      maybeInjectAppearanceSettingsCard();
-    });
+    const observer = new MutationObserver(scheduleReconcileDom);
     observer.observe(document.documentElement, { childList: true, subtree: true });
     state.observer = observer;
   }
@@ -1170,14 +1639,26 @@
   window.T3MatrixRain = {
     getSettings: () => ({ ...state.settings }),
     updateSetting,
+    resetSettings,
     toggle: () => updateSetting({ enabled: !state.settings.enabled }),
     enable: () => updateSetting({ enabled: true }),
     disable: () => updateSetting({ enabled: false }),
+    openPanel: () => updateSetting({ showPill: true, panelOpen: true }),
+    showPill: () => updateSetting({ showPill: true }),
     livelyPropertyListener,
     destroy: () => {
-      if (state.timerId !== null) window.clearInterval(state.timerId);
+      state.mounted = false;
+      stopLoop();
+      if (state.mutationRafId !== null) {
+        window.cancelAnimationFrame(state.mutationRafId);
+        state.mutationRafId = null;
+      }
       window.removeEventListener("resize", resizeCanvas);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("focus", ensureLoopRunning);
+      window.removeEventListener("pageshow", ensureLoopRunning);
+      document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       state.observer?.disconnect();
       state.canvas?.remove();
       state.styleEl?.remove();
@@ -1185,6 +1666,7 @@
       state.appearanceCardEl?.remove();
       document.documentElement.removeAttribute("data-t3-matrix-rain");
       document.documentElement.removeAttribute("data-t3-matrix-overlay");
+      document.documentElement.removeAttribute("data-t3-matrix-chat-glass");
     },
   };
 })();
